@@ -10,11 +10,13 @@ import { buildVersionProbeCommand, GenericACPAgentClient } from "./generic-acp-a
 
 const TEST_ACP_TIMEOUT_MS = 1_000;
 
-function parseInitializeTrace(content: string): Array<{ clientCapabilities: unknown }> {
+function parseInitializeTrace(
+  content: string,
+): Array<{ clientCapabilities: unknown; _meta: unknown }> {
   return content
     .trim()
     .split("\n")
-    .map((line) => JSON.parse(line) as { clientCapabilities: unknown });
+    .map((line) => JSON.parse(line) as { clientCapabilities: unknown; _meta: unknown });
 }
 
 describe("GenericACPAgentClient diagnostics", () => {
@@ -122,6 +124,9 @@ describe("GenericACPAgentClient diagnostics", () => {
             terminal: true,
           },
         },
+        initializeRequestMeta: {
+          clientIdentifier: "paseo-test",
+        },
       });
 
       await client.fetchCatalog({ scope: "workspace", cwd: testDir, force: true });
@@ -140,6 +145,9 @@ describe("GenericACPAgentClient diagnostics", () => {
             },
             terminal: true,
           },
+          _meta: {
+            clientIdentifier: "paseo-test",
+          },
         },
         {
           clientCapabilities: {
@@ -148,6 +156,9 @@ describe("GenericACPAgentClient diagnostics", () => {
               writeTextFile: true,
             },
             terminal: true,
+          },
+          _meta: {
+            clientIdentifier: "paseo-test",
           },
         },
       ]);
@@ -245,7 +256,10 @@ rl.on("line", (line) => {
     if (initializeTracePath) {
       fs.appendFileSync(
         initializeTracePath,
-        JSON.stringify({ clientCapabilities: message.params?.clientCapabilities }) + "\\n",
+        JSON.stringify({
+          clientCapabilities: message.params?.clientCapabilities,
+          _meta: message.params?._meta,
+        }) + "\\n",
       );
     }
     send(message.id, {

@@ -10,8 +10,14 @@ import {
   type ACPConfigFeatureOption,
   DEFAULT_ACP_CAPABILITIES,
   type ACPExtensionCommandsParser,
+  type ACPExtensionNotificationParser,
+  type ACPInitialCommandsParser,
+  type ACPInitializeRequestMeta,
   type ACPSessionModelRequestMetaContext,
-  type ACPThinkingOptionWriterContext,
+  type ACPThinkingOptionWriter,
+  type ACPToolDetailMapper,
+  type ACPToolSnapshot,
+  type SessionStateResponse,
 } from "./acp-agent.js";
 import {
   buildBinaryDiagnosticRows,
@@ -53,10 +59,17 @@ interface GenericACPAgentClientOptions {
   configFeatureOptions?: ACPConfigFeatureOption[];
   extensionCommandsParser?: ACPExtensionCommandsParser;
   catalogModelResolver?: ACPCatalogModelResolver;
-  thinkingOptionWriter?: (context: ACPThinkingOptionWriterContext) => Promise<void>;
+  thinkingOptionWriter?: ACPThinkingOptionWriter;
   sessionModelRequestMeta?: (
     context: ACPSessionModelRequestMetaContext,
   ) => Record<string, unknown> | undefined;
+  initializeRequestMeta?: ACPInitializeRequestMeta;
+  initialCommandsParser?: ACPInitialCommandsParser;
+  extensionNotificationParser?: ACPExtensionNotificationParser;
+  forwardChildSessionUpdates?: boolean;
+  sessionResponseTransformer?: (response: SessionStateResponse) => SessionStateResponse;
+  toolSnapshotTransformer?: (snapshot: ACPToolSnapshot) => ACPToolSnapshot;
+  toolDetailMapper?: ACPToolDetailMapper;
 }
 
 export class GenericACPAgentClient extends ACPAgentClient {
@@ -84,6 +97,13 @@ export class GenericACPAgentClient extends ACPAgentClient {
       catalogModelResolver: options.catalogModelResolver,
       thinkingOptionWriter: options.thinkingOptionWriter,
       sessionModelRequestMeta: options.sessionModelRequestMeta,
+      initializeRequestMeta: options.initializeRequestMeta,
+      initialCommandsParser: options.initialCommandsParser,
+      extensionNotificationParser: options.extensionNotificationParser,
+      forwardChildSessionUpdates: options.forwardChildSessionUpdates,
+      sessionResponseTransformer: options.sessionResponseTransformer,
+      toolSnapshotTransformer: options.toolSnapshotTransformer,
+      toolDetailMapper: options.toolDetailMapper,
     });
 
     this.command = options.command;
