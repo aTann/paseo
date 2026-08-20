@@ -437,7 +437,7 @@ This ensures the checkout ref matches the actual code on `main` with the fix inc
 
 - `version:all:*` bumps root + syncs workspace versions and `@getpaseo/*` dependency versions
 - `release:prepare` refreshes workspace `node_modules` links to prevent stale types
-- `npm run dev:desktop` and `npm run build:desktop` target the Electron desktop package in `packages/desktop`
+- `npm run dev:desktop` and `npm run build:desktop` target the Electron desktop package in `packages/desktop`. Local installers: [desktop-packaging.md](desktop-packaging.md).
 - If `release:publish` partially fails, re-run it — npm skips already-published versions
 - If `release:publish:beta` partially fails, re-run it — npm skips already-published versions and keeps prereleases off `latest` because every publish uses `--tag beta`
 - The website uses GitHub's latest published release API for download links, so published beta prereleases do not replace the stable download target.

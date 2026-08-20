@@ -124,6 +124,9 @@ PASEO_DESKTOP_SMOKE_ARTIFACT_DIR=/tmp/paseo-desktop-smoke \
 npm run build:desktop -- --publish never --linux --x64 --dir
 ```
 
+`--dir` is an unpacked tree, not an installer. For a local `.deb` see
+[desktop-packaging.md](desktop-packaging.md).
+
 ### Undeclared peer dependencies break app.asar
 
 electron-builder packs `node_modules` by walking declared production `dependencies`. A package that imports something it only lists as a `peerDependency` resolves fine in this hoisted workspace, passes every test, and then throws `ERR_MODULE_NOT_FOUND` inside `app.asar` — killing the desktop daemon at startup. That shipped twice from `@replit/codemirror-lang-*` grammars, which are interactive editor extensions published as if they were bare parsers.
