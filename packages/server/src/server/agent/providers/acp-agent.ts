@@ -456,6 +456,10 @@ interface ACPAgentClientOptions {
   sessionModelRequestMeta?: (
     context: ACPSessionModelRequestMetaContext,
   ) => Record<string, unknown> | undefined;
+  buildSessionFeatures?: ACPSessionFeaturesBuilder;
+  sessionFeatureWriter?: ACPSessionFeatureWriter;
+  currentModeUpdateHandler?: ACPCurrentModeUpdateHandler;
+  includeAutoAcceptFeature?: boolean;
   capabilities?: AgentCapabilityFlags;
   extensionCommandsParser?: ACPExtensionCommandsParser;
   initialCommandsParser?: ACPInitialCommandsParser;
@@ -490,6 +494,10 @@ interface ACPAgentSessionOptions {
   sessionModelRequestMeta?: (
     context: ACPSessionModelRequestMetaContext,
   ) => Record<string, unknown> | undefined;
+  buildSessionFeatures?: ACPSessionFeaturesBuilder;
+  sessionFeatureWriter?: ACPSessionFeatureWriter;
+  currentModeUpdateHandler?: ACPCurrentModeUpdateHandler;
+  includeAutoAcceptFeature?: boolean;
   capabilities: AgentCapabilityFlags;
   extensionCommandsParser?: ACPExtensionCommandsParser;
   initialCommandsParser?: ACPInitialCommandsParser;
@@ -633,6 +641,27 @@ export interface ACPProviderModeWriteResult {
 export interface ACPBeforeModeWriteResult {
   configOptions?: SessionConfigOption[];
 }
+
+export interface ACPSessionFeatureWriterContext {
+  connection: ClientSideConnection;
+  sessionId: string;
+  featureId: string;
+  value: unknown;
+  logger: Logger;
+}
+
+export type ACPSessionFeatureWriter = (context: ACPSessionFeatureWriterContext) => Promise<boolean>;
+
+export type ACPSessionFeaturesBuilder = (config: AgentSessionConfig) => AgentFeature[];
+
+export interface ACPCurrentModeUpdateResult {
+  ignoreCurrentMode?: boolean;
+  featureValues?: Record<string, unknown>;
+}
+
+export type ACPCurrentModeUpdateHandler = (
+  modeId: string,
+) => ACPCurrentModeUpdateResult | undefined;
 
 export interface ACPThinkingOptionWriterContext {
   connection: ClientSideConnection;
@@ -873,6 +902,10 @@ export class ACPAgentClient implements AgentClient {
   private readonly sessionModelRequestMeta?: (
     context: ACPSessionModelRequestMetaContext,
   ) => Record<string, unknown> | undefined;
+  private readonly buildSessionFeatures?: ACPSessionFeaturesBuilder;
+  private readonly sessionFeatureWriter?: ACPSessionFeatureWriter;
+  private readonly currentModeUpdateHandler?: ACPCurrentModeUpdateHandler;
+  private readonly includeAutoAcceptFeature: boolean;
   private readonly waitForInitialCommands: boolean;
   private readonly initialCommandsWaitTimeoutMs: number;
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
@@ -907,6 +940,10 @@ export class ACPAgentClient implements AgentClient {
     this.beforeModeWriter = options.beforeModeWriter;
     this.thinkingOptionWriter = options.thinkingOptionWriter;
     this.sessionModelRequestMeta = options.sessionModelRequestMeta;
+    this.buildSessionFeatures = options.buildSessionFeatures;
+    this.sessionFeatureWriter = options.sessionFeatureWriter;
+    this.currentModeUpdateHandler = options.currentModeUpdateHandler;
+    this.includeAutoAcceptFeature = options.includeAutoAcceptFeature ?? true;
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
@@ -942,6 +979,10 @@ export class ACPAgentClient implements AgentClient {
         beforeModeWriter: this.beforeModeWriter,
         thinkingOptionWriter: this.thinkingOptionWriter,
         sessionModelRequestMeta: this.sessionModelRequestMeta,
+        buildSessionFeatures: this.buildSessionFeatures,
+        sessionFeatureWriter: this.sessionFeatureWriter,
+        currentModeUpdateHandler: this.currentModeUpdateHandler,
+        includeAutoAcceptFeature: this.includeAutoAcceptFeature,
         capabilities: this.capabilities,
         agentId: launchContext?.agentId,
         launchEnv: launchContext?.env,
@@ -998,6 +1039,10 @@ export class ACPAgentClient implements AgentClient {
       beforeModeWriter: this.beforeModeWriter,
       thinkingOptionWriter: this.thinkingOptionWriter,
       sessionModelRequestMeta: this.sessionModelRequestMeta,
+      buildSessionFeatures: this.buildSessionFeatures,
+      sessionFeatureWriter: this.sessionFeatureWriter,
+      currentModeUpdateHandler: this.currentModeUpdateHandler,
+      includeAutoAcceptFeature: this.includeAutoAcceptFeature,
       capabilities: this.capabilities,
       handle,
       agentId: launchContext?.agentId,
@@ -1095,9 +1140,12 @@ export class ACPAgentClient implements AgentClient {
   }
 
   async listFeatures(config: AgentSessionConfig): Promise<AgentFeature[]> {
-    const autoAcceptFeature = buildACPAutoAcceptFeature(config);
+    const extraFeatures = this.buildSessionFeatures?.(config) ?? [];
+    const features = this.includeAutoAcceptFeature
+      ? [buildACPAutoAcceptFeature(config), ...extraFeatures]
+      : extraFeatures;
     if (this.configFeatureOptions.length === 0) {
-      return [autoAcceptFeature];
+      return features;
     }
 
     this.assertProvider(config);
@@ -1111,7 +1159,7 @@ export class ACPAgentClient implements AgentClient {
       );
       const transformed = this.transformSessionResponse(response);
       return [
-        autoAcceptFeature,
+        ...features,
         ...deriveFeaturesFromACP(transformed.configOptions, this.configFeatureOptions),
       ];
     } finally {
@@ -1502,6 +1550,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private readonly sessionModelRequestMeta?: (
     context: ACPSessionModelRequestMetaContext,
   ) => Record<string, unknown> | undefined;
+  private readonly buildSessionFeatures?: ACPSessionFeaturesBuilder;
+  private readonly sessionFeatureWriter?: ACPSessionFeatureWriter;
+  private readonly currentModeUpdateHandler?: ACPCurrentModeUpdateHandler;
+  private readonly includeAutoAcceptFeature: boolean;
   private readonly agentId?: string;
   private readonly launchEnv?: Record<string, string>;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
@@ -1570,6 +1622,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.beforeModeWriter = options.beforeModeWriter;
     this.thinkingOptionWriter = options.thinkingOptionWriter;
     this.sessionModelRequestMeta = options.sessionModelRequestMeta;
+    this.buildSessionFeatures = options.buildSessionFeatures;
+    this.sessionFeatureWriter = options.sessionFeatureWriter;
+    this.currentModeUpdateHandler = options.currentModeUpdateHandler;
+    this.includeAutoAcceptFeature = options.includeAutoAcceptFeature ?? true;
     this.availableModes = options.defaultModes;
     this.agentId = options.agentId;
     this.launchEnv = options.launchEnv;
@@ -1786,10 +1842,12 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   get features(): AgentFeature[] {
-    return [
-      buildACPAutoAcceptFeature(this.config),
-      ...deriveFeaturesFromACP(this.configOptions, this.configFeatureOptions),
-    ];
+    const extraFeatures = this.buildSessionFeatures?.(this.config) ?? [];
+    const derivedFeatures = deriveFeaturesFromACP(this.configOptions, this.configFeatureOptions);
+    if (!this.includeAutoAcceptFeature) {
+      return [...derivedFeatures, ...extraFeatures];
+    }
+    return [buildACPAutoAcceptFeature(this.config), ...derivedFeatures, ...extraFeatures];
   }
 
   private ensureCommandsReadyDeferred(): void {
@@ -2151,6 +2209,23 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       return;
     }
 
+    if (this.sessionFeatureWriter) {
+      const handled = await this.sessionFeatureWriter({
+        connection: this.connection,
+        sessionId: this.sessionId,
+        featureId,
+        value,
+        logger: this.logger,
+      });
+      if (handled) {
+        this.config.featureValues = {
+          ...this.config.featureValues,
+          [featureId]: value,
+        };
+        return;
+      }
+    }
+
     const featureOption = this.configFeatureOptions.find((option) => option.id === featureId);
     if (!featureOption) {
       throw new Error(`Unknown ${this.provider} feature: ${featureId}`);
@@ -2339,7 +2414,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
 
   async requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
     const canAutoAccept =
-      isACPAutoAcceptEnabled(this.config) && !isACPChooserRequest(params.options);
+      this.includeAutoAcceptFeature &&
+      isACPAutoAcceptEnabled(this.config) &&
+      !isACPChooserRequest(params.options);
     if (canAutoAccept) {
       const allowOption = selectPermissionOption(params.options, { behavior: "allow" });
       if (allowOption) {
@@ -2947,6 +3024,13 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       }
       await this.setFeature(featureOption.id, configuredFeatureValues[featureOption.id]);
     }
+    const extraFeatures = this.buildSessionFeatures?.(this.config) ?? [];
+    for (const feature of extraFeatures) {
+      if (!Object.prototype.hasOwnProperty.call(configuredFeatureValues, feature.id)) {
+        continue;
+      }
+      await this.setFeature(feature.id, configuredFeatureValues[feature.id]);
+    }
   }
 
   private warnInvalidSelection(value: string, message: string): void {
@@ -3129,6 +3213,16 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   private handleCurrentModeUpdate(update: CurrentModeUpdate): void {
+    const handled = this.currentModeUpdateHandler?.(update.currentModeId);
+    if (handled?.featureValues) {
+      this.config.featureValues = {
+        ...this.config.featureValues,
+        ...handled.featureValues,
+      };
+    }
+    if (handled?.ignoreCurrentMode) {
+      return;
+    }
     this.currentMode = this.transformModeId(update.currentModeId);
   }
 

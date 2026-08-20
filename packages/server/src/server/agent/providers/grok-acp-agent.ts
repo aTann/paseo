@@ -2,20 +2,34 @@ import { access } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { InitializeResponse } from "@agentclientprotocol/sdk";
+import type { ClientSideConnection, InitializeResponse } from "@agentclientprotocol/sdk";
 import type { Logger } from "pino";
 import { z } from "zod";
 
 import type {
+  AgentCreateConfigUnattendedInput,
+  AgentFeature,
+  AgentMode,
+  AgentSessionConfig,
   AgentSlashCommand,
   AgentSlashCommandKind,
   AgentStreamEvent,
   ImportableProviderSession,
   ListImportableSessionsOptions,
+  ResolveAgentCreateConfigInput,
+  ResolveAgentCreateConfigResult,
 } from "../agent-sdk-types.js";
+import {
+  isDefaultAgentCreateConfigUnattended,
+  resolveDefaultAgentCreateConfig,
+} from "../create-agent-mode.js";
 import type {
+  ACPCurrentModeUpdateResult,
   ACPExtensionNotificationParser,
   ACPInitialCommandsParser,
+  ACPProviderModeWriterContext,
+  ACPProviderModeWriteResult,
+  ACPSessionFeatureWriterContext,
   ACPThinkingOptionWriter,
   SessionStateResponse,
 } from "./acp-agent.js";
@@ -43,6 +57,37 @@ const GROK_AUTH_ENV_KEYS = [
   "GROK_AUTH_PROVIDER_COMMAND",
   "GROK_DEPLOYMENT_KEY",
 ] as const;
+
+const GROK_DEFAULT_MODE_ID = "default";
+const GROK_AUTO_MODE_ID = "auto";
+const GROK_ALWAYS_APPROVE_MODE_ID = "always-approve";
+const GROK_PLAN_SESSION_MODE_ID = "plan";
+const GROK_PLAN_MODE_FEATURE_ID = "plan_mode";
+const GROK_YOLO_MODE_CHANGED_METHOD = "x.ai/yolo_mode_changed";
+
+export const GROK_MODES: AgentMode[] = [
+  {
+    id: GROK_DEFAULT_MODE_ID,
+    label: "Normal",
+    description: "Ask before running tools.",
+    colorTier: "safe",
+  },
+  {
+    id: GROK_AUTO_MODE_ID,
+    label: "Auto",
+    description: "Classifier approves safe tools; dangerous ones may still prompt.",
+    colorTier: "moderate",
+  },
+  {
+    id: GROK_ALWAYS_APPROVE_MODE_ID,
+    label: "Always-Approve",
+    description: "Skip all permission prompts.",
+    colorTier: "dangerous",
+    isUnattended: true,
+  },
+];
+
+type GrokPermissionMode = "ask" | "auto" | "always-approve";
 
 const GROK_REASONING_CONFIG_ID = "_paseo.grok.reasoning_effort";
 const GROK_CANONICAL_REASONING_EFFORT: Record<string, string> = {
@@ -226,11 +271,131 @@ function resolveGrokReasoningCurrentValue(
   );
 }
 
+function grokPermissionModeFromId(modeId: string): GrokPermissionMode | null {
+  if (modeId === GROK_DEFAULT_MODE_ID) return "ask";
+  if (modeId === GROK_AUTO_MODE_ID) return "auto";
+  if (modeId === GROK_ALWAYS_APPROVE_MODE_ID) return "always-approve";
+  return null;
+}
+
+function resolveGrokPermissionCurrentModeId(modeId: string | null | undefined): string {
+  if (modeId === GROK_AUTO_MODE_ID || modeId === GROK_ALWAYS_APPROVE_MODE_ID) {
+    return modeId;
+  }
+  return GROK_DEFAULT_MODE_ID;
+}
+
+function applyGrokPermissionModes(response: SessionStateResponse): SessionStateResponse {
+  return {
+    ...response,
+    modes: {
+      currentModeId: resolveGrokPermissionCurrentModeId(response.modes?.currentModeId),
+      availableModes: GROK_MODES.map((mode) => ({
+        id: mode.id,
+        name: mode.label,
+        description: mode.description ?? "",
+      })),
+    },
+  };
+}
+
+async function notifyGrokPermissionMode(
+  connection: ClientSideConnection,
+  permissionMode: GrokPermissionMode,
+): Promise<void> {
+  await connection.extNotification(GROK_YOLO_MODE_CHANGED_METHOD, {
+    yolo_mode: permissionMode === "always-approve",
+    auto_mode: permissionMode === "auto",
+    permission_mode: permissionMode,
+  });
+}
+
+export async function writeGrokPermissionMode(
+  context: ACPProviderModeWriterContext,
+): Promise<ACPProviderModeWriteResult> {
+  const permissionMode = grokPermissionModeFromId(context.requestedModeId);
+  if (!permissionMode) {
+    return { handled: false };
+  }
+  await notifyGrokPermissionMode(context.connection, permissionMode);
+  return { handled: true, currentModeId: context.requestedModeId };
+}
+
+export function buildGrokSessionFeatures(config: AgentSessionConfig): AgentFeature[] {
+  return [
+    {
+      type: "toggle",
+      id: GROK_PLAN_MODE_FEATURE_ID,
+      label: "Plan",
+      description: "Switch Grok into plan mode before making changes.",
+      tooltip: "Toggle plan mode",
+      icon: "list-todo",
+      value: config.featureValues?.[GROK_PLAN_MODE_FEATURE_ID] === true,
+    },
+  ];
+}
+
+function withoutGrokAutoAccept(
+  featureValues: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!featureValues || !Object.prototype.hasOwnProperty.call(featureValues, "auto_accept")) {
+    return featureValues;
+  }
+  const { auto_accept: _autoAccept, ...rest } = featureValues;
+  return rest;
+}
+
+export function resolveGrokCreateConfig(
+  input: ResolveAgentCreateConfigInput,
+): ResolveAgentCreateConfigResult {
+  const availableModes = input.availableModes?.length ? input.availableModes : GROK_MODES;
+  return resolveDefaultAgentCreateConfig({
+    ...input,
+    availableModes,
+    featureValues: withoutGrokAutoAccept(input.featureValues),
+  });
+}
+
+export function isGrokCreateConfigUnattended(input: AgentCreateConfigUnattendedInput): boolean {
+  const availableModes = input.availableModes.length > 0 ? input.availableModes : GROK_MODES;
+  return (
+    input.modeId === GROK_ALWAYS_APPROVE_MODE_ID ||
+    isDefaultAgentCreateConfigUnattended({ ...input, availableModes })
+  );
+}
+
+export async function writeGrokPlanModeFeature(
+  context: ACPSessionFeatureWriterContext,
+): Promise<boolean> {
+  if (context.featureId !== GROK_PLAN_MODE_FEATURE_ID) {
+    return false;
+  }
+  const modeId = context.value === true ? GROK_PLAN_SESSION_MODE_ID : GROK_DEFAULT_MODE_ID;
+  await context.connection.setSessionMode({
+    sessionId: context.sessionId,
+    modeId,
+  });
+  return true;
+}
+
+export function handleGrokCurrentModeUpdate(
+  modeId: string,
+): ACPCurrentModeUpdateResult | undefined {
+  if (modeId === GROK_PLAN_SESSION_MODE_ID) {
+    return { ignoreCurrentMode: true, featureValues: { [GROK_PLAN_MODE_FEATURE_ID]: true } };
+  }
+  if (modeId === GROK_DEFAULT_MODE_ID || modeId === "ask") {
+    return { ignoreCurrentMode: true, featureValues: { [GROK_PLAN_MODE_FEATURE_ID]: false } };
+  }
+  return undefined;
+}
+
 export function transformGrokSessionResponse(response: SessionStateResponse): SessionStateResponse {
-  const meta = response._meta;
-  if (!isRecord(meta)) return response;
+  const withModes = applyGrokPermissionModes(response);
+  const meta = withModes._meta;
+  if (!isRecord(meta)) return withModes;
   const parsed = GrokSessionConfigSchema.safeParse(meta["x.ai/sessionConfig"]);
-  if (!parsed.success) return response;
+  if (!parsed.success) return withModes;
 
   const sessionOptions = parsed.data.options.filter((option) => option.category === "mode");
   const selectedModelId = parsed.data.options.find(
@@ -246,12 +411,12 @@ export function transformGrokSessionResponse(response: SessionStateResponse): Se
   const modelOptions = normalizeModelReasoningOptions(rawEfforts, sessionOptions);
   const options =
     modelOptions.length > 0 ? modelOptions : normalizeSessionReasoningOptions(sessionOptions);
-  if (options.length === 0) return response;
+  if (options.length === 0) return withModes;
 
   const currentValue = resolveGrokReasoningCurrentValue(modelMeta, sessionOptions, options);
 
   return {
-    ...response,
+    ...withModes,
     configOptions: [
       ...(response.configOptions ?? []).filter((option) => option.id !== GROK_REASONING_CONFIG_ID),
       {
@@ -534,6 +699,8 @@ function authPath(env: Record<string, string | undefined>): string {
 
 export class GrokACPAgentClient extends GenericACPAgentClient {
   private readonly configuredEnv: Record<string, string>;
+  override readonly resolveCreateConfig = resolveGrokCreateConfig;
+  override readonly isCreateConfigUnattended = isGrokCreateConfigUnattended;
 
   constructor(options: GrokACPAgentClientOptions) {
     super({
@@ -547,7 +714,13 @@ export class GrokACPAgentClient extends GenericACPAgentClient {
       initialCommandsParser: parseGrokInitialCommands,
       forwardChildSessionUpdates: true,
       extensionNotificationParser: createGrokExtensionNotificationParser(),
+      defaultModes: GROK_MODES,
       sessionResponseTransformer: transformGrokSessionResponse,
+      providerModeWriter: writeGrokPermissionMode,
+      buildSessionFeatures: buildGrokSessionFeatures,
+      sessionFeatureWriter: writeGrokPlanModeFeature,
+      currentModeUpdateHandler: handleGrokCurrentModeUpdate,
+      includeAutoAcceptFeature: false,
       thinkingOptionWriter: writeGrokThinkingOption,
       toolSnapshotTransformer: transformGrokAcpToolSnapshot,
       toolDetailMapper: mapGrokAcpToolDetail,

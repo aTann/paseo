@@ -9,13 +9,20 @@ import { buildProviderRegistry } from "../provider-registry.js";
 import type { SessionStateResponse, SpawnedACPProcess } from "./acp-agent.js";
 import {
   applyDiskMeta,
+  buildGrokSessionFeatures,
   createGrokExtensionNotificationParser,
   formatGrokSubagentTitle,
   GrokACPAgentClient,
+  GROK_MODES,
+  handleGrokCurrentModeUpdate,
+  isGrokCreateConfigUnattended,
+  resolveGrokCreateConfig,
   parseGrokExtensionNotification,
   parseGrokInitialCommands,
   parseGrokSessionListPage,
   transformGrokSessionResponse,
+  writeGrokPermissionMode,
+  writeGrokPlanModeFeature,
   writeGrokThinkingOption,
 } from "./grok-acp-agent.js";
 
@@ -161,6 +168,207 @@ describe("GrokACPAgentClient", () => {
           ],
         },
       ],
+    });
+  });
+
+  test("exposes Grok permission modes separately from plan mode", () => {
+    const response = transformGrokSessionResponse({
+      sessionId: "session-1",
+    } as unknown as SessionStateResponse);
+
+    expect(GROK_MODES.map((mode) => mode.id)).toEqual(["default", "auto", "always-approve"]);
+    expect(response.modes).toEqual({
+      currentModeId: "default",
+      availableModes: [
+        { id: "default", name: "Normal", description: "Ask before running tools." },
+        {
+          id: "auto",
+          name: "Auto",
+          description: "Classifier approves safe tools; dangerous ones may still prompt.",
+        },
+        {
+          id: "always-approve",
+          name: "Always-Approve",
+          description: "Skip all permission prompts.",
+        },
+      ],
+    });
+    expect(
+      buildGrokSessionFeatures({ cwd: "/tmp", provider: "grok" }).map((feature) => feature.id),
+    ).toEqual(["plan_mode"]);
+  });
+
+  test("omits ACP Auto Accept and uses Always-Approve for unattended Grok", async () => {
+    const client = new GrokACPAgentClient({
+      logger: createTestLogger(),
+      command: ["grok", "agent", "stdio"],
+      providerId: "grok",
+      label: "Grok",
+    });
+
+    await expect(
+      client.listFeatures({
+        provider: "grok",
+        cwd: "/tmp/grok",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ type: "toggle", id: "plan_mode", value: false }),
+    ]);
+
+    expect(
+      resolveGrokCreateConfig({
+        provider: "grok",
+        requestedMode: undefined,
+        featureValues: { auto_accept: true, plan_mode: false },
+        parent: null,
+        unattended: true,
+        availableModes: [],
+      }),
+    ).toEqual({
+      modeId: "always-approve",
+      featureValues: { plan_mode: false },
+    });
+    expect(
+      isGrokCreateConfigUnattended({
+        modeId: "always-approve",
+        config: { provider: "grok", cwd: "/tmp/grok" },
+        availableModes: [],
+      }),
+    ).toBe(true);
+    expect(
+      isGrokCreateConfigUnattended({
+        modeId: "default",
+        config: {
+          provider: "grok",
+          cwd: "/tmp/grok",
+          featureValues: { auto_accept: true },
+        },
+        availableModes: [],
+      }),
+    ).toBe(false);
+  });
+
+  test("writes Grok permission modes through x.ai/yolo_mode_changed", async () => {
+    const extNotification = vi.fn().mockResolvedValue(undefined);
+    const setSessionMode = vi.fn().mockResolvedValue({});
+    const connection = {
+      extNotification,
+      setSessionMode,
+    } as unknown as ClientSideConnection;
+
+    const auto = await writeGrokPermissionMode({
+      connection,
+      sessionId: "session-1",
+      requestedModeId: "auto",
+      currentModeId: "default",
+      selection: {
+        availableMode: GROK_MODES[1],
+        configOption: null,
+        configChoice: null,
+        hasAvailableModes: true,
+      },
+      configOptions: [],
+      logger: createTestLogger(),
+    });
+    const alwaysApprove = await writeGrokPermissionMode({
+      connection,
+      sessionId: "session-1",
+      requestedModeId: "always-approve",
+      currentModeId: "auto",
+      selection: {
+        availableMode: GROK_MODES[2],
+        configOption: null,
+        configChoice: null,
+        hasAvailableModes: true,
+      },
+      configOptions: [],
+      logger: createTestLogger(),
+    });
+    const normal = await writeGrokPermissionMode({
+      connection,
+      sessionId: "session-1",
+      requestedModeId: "default",
+      currentModeId: "always-approve",
+      selection: {
+        availableMode: GROK_MODES[0],
+        configOption: null,
+        configChoice: null,
+        hasAvailableModes: true,
+      },
+      configOptions: [],
+      logger: createTestLogger(),
+    });
+
+    expect(auto).toEqual({ handled: true, currentModeId: "auto" });
+    expect(alwaysApprove).toEqual({ handled: true, currentModeId: "always-approve" });
+    expect(normal).toEqual({ handled: true, currentModeId: "default" });
+    expect(setSessionMode).not.toHaveBeenCalled();
+    expect(extNotification).toHaveBeenNthCalledWith(1, "x.ai/yolo_mode_changed", {
+      yolo_mode: false,
+      auto_mode: true,
+      permission_mode: "auto",
+    });
+    expect(extNotification).toHaveBeenNthCalledWith(2, "x.ai/yolo_mode_changed", {
+      yolo_mode: true,
+      auto_mode: false,
+      permission_mode: "always-approve",
+    });
+    expect(extNotification).toHaveBeenNthCalledWith(3, "x.ai/yolo_mode_changed", {
+      yolo_mode: false,
+      auto_mode: false,
+      permission_mode: "ask",
+    });
+  });
+
+  test("toggles Grok plan mode through session/set_mode without changing permission mode", async () => {
+    const setSessionMode = vi.fn().mockResolvedValue({});
+    const extNotification = vi.fn().mockResolvedValue(undefined);
+    const connection = {
+      setSessionMode,
+      extNotification,
+    } as unknown as ClientSideConnection;
+
+    expect(
+      await writeGrokPlanModeFeature({
+        connection,
+        sessionId: "session-1",
+        featureId: "plan_mode",
+        value: true,
+        logger: createTestLogger(),
+      }),
+    ).toBe(true);
+    expect(
+      await writeGrokPlanModeFeature({
+        connection,
+        sessionId: "session-1",
+        featureId: "plan_mode",
+        value: false,
+        logger: createTestLogger(),
+      }),
+    ).toBe(true);
+    expect(
+      await writeGrokPlanModeFeature({
+        connection,
+        sessionId: "session-1",
+        featureId: "auto_accept",
+        value: true,
+        logger: createTestLogger(),
+      }),
+    ).toBe(false);
+
+    expect(setSessionMode).toHaveBeenNthCalledWith(1, { sessionId: "session-1", modeId: "plan" });
+    expect(setSessionMode).toHaveBeenNthCalledWith(2, {
+      sessionId: "session-1",
+      modeId: "default",
+    });
+    expect(extNotification).not.toHaveBeenCalled();
+    expect(handleGrokCurrentModeUpdate("plan")).toEqual({
+      ignoreCurrentMode: true,
+      featureValues: { plan_mode: true },
+    });
+    expect(handleGrokCurrentModeUpdate("default")).toEqual({
+      ignoreCurrentMode: true,
+      featureValues: { plan_mode: false },
     });
   });
 

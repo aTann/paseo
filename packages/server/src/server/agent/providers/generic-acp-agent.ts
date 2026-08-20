@@ -1,18 +1,23 @@
 import type { Logger } from "pino";
 import { z } from "zod";
 
-import type { AgentCapabilityFlags } from "../agent-sdk-types.js";
+import type { AgentCapabilityFlags, AgentMode } from "../agent-sdk-types.js";
 import { checkProviderLaunchAvailable, resolveProviderLaunch } from "../provider-launch-config.js";
 import {
   ACPAgentClient,
   type ACPCatalogModelResolver,
   type ACPClientCapabilityMeta,
   type ACPConfigFeatureOption,
+  type ACPCurrentModeUpdateHandler,
   DEFAULT_ACP_CAPABILITIES,
   type ACPExtensionCommandsParser,
   type ACPExtensionNotificationParser,
   type ACPInitialCommandsParser,
   type ACPInitializeRequestMeta,
+  type ACPProviderModeWriterContext,
+  type ACPProviderModeWriteResult,
+  type ACPSessionFeaturesBuilder,
+  type ACPSessionFeatureWriter,
   type ACPSessionModelRequestMetaContext,
   type ACPThinkingOptionWriter,
   type ACPToolDetailMapper,
@@ -59,10 +64,18 @@ interface GenericACPAgentClientOptions {
   configFeatureOptions?: ACPConfigFeatureOption[];
   extensionCommandsParser?: ACPExtensionCommandsParser;
   catalogModelResolver?: ACPCatalogModelResolver;
+  defaultModes?: AgentMode[];
   thinkingOptionWriter?: ACPThinkingOptionWriter;
+  providerModeWriter?: (
+    context: ACPProviderModeWriterContext,
+  ) => Promise<ACPProviderModeWriteResult>;
   sessionModelRequestMeta?: (
     context: ACPSessionModelRequestMetaContext,
   ) => Record<string, unknown> | undefined;
+  buildSessionFeatures?: ACPSessionFeaturesBuilder;
+  sessionFeatureWriter?: ACPSessionFeatureWriter;
+  currentModeUpdateHandler?: ACPCurrentModeUpdateHandler;
+  includeAutoAcceptFeature?: boolean;
   initializeRequestMeta?: ACPInitializeRequestMeta;
   initialCommandsParser?: ACPInitialCommandsParser;
   extensionNotificationParser?: ACPExtensionNotificationParser;
@@ -95,8 +108,14 @@ export class GenericACPAgentClient extends ACPAgentClient {
       configFeatureOptions: options.configFeatureOptions,
       extensionCommandsParser: options.extensionCommandsParser,
       catalogModelResolver: options.catalogModelResolver,
+      defaultModes: options.defaultModes,
       thinkingOptionWriter: options.thinkingOptionWriter,
+      providerModeWriter: options.providerModeWriter,
       sessionModelRequestMeta: options.sessionModelRequestMeta,
+      buildSessionFeatures: options.buildSessionFeatures,
+      sessionFeatureWriter: options.sessionFeatureWriter,
+      currentModeUpdateHandler: options.currentModeUpdateHandler,
+      includeAutoAcceptFeature: options.includeAutoAcceptFeature,
       initializeRequestMeta: options.initializeRequestMeta,
       initialCommandsParser: options.initialCommandsParser,
       extensionNotificationParser: options.extensionNotificationParser,
