@@ -10,6 +10,8 @@ import {
   type ACPConfigFeatureOption,
   DEFAULT_ACP_CAPABILITIES,
   type ACPExtensionCommandsParser,
+  type ACPSessionModelRequestMetaContext,
+  type ACPThinkingOptionWriterContext,
 } from "./acp-agent.js";
 import {
   buildBinaryDiagnosticRows,
@@ -51,6 +53,10 @@ interface GenericACPAgentClientOptions {
   configFeatureOptions?: ACPConfigFeatureOption[];
   extensionCommandsParser?: ACPExtensionCommandsParser;
   catalogModelResolver?: ACPCatalogModelResolver;
+  thinkingOptionWriter?: (context: ACPThinkingOptionWriterContext) => Promise<void>;
+  sessionModelRequestMeta?: (
+    context: ACPSessionModelRequestMetaContext,
+  ) => Record<string, unknown> | undefined;
 }
 
 export class GenericACPAgentClient extends ACPAgentClient {
@@ -76,6 +82,8 @@ export class GenericACPAgentClient extends ACPAgentClient {
       configFeatureOptions: options.configFeatureOptions,
       extensionCommandsParser: options.extensionCommandsParser,
       catalogModelResolver: options.catalogModelResolver,
+      thinkingOptionWriter: options.thinkingOptionWriter,
+      sessionModelRequestMeta: options.sessionModelRequestMeta,
     });
 
     this.command = options.command;

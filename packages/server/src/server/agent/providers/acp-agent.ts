@@ -389,6 +389,7 @@ export interface ACPCatalogModelResolverContext {
   connection: ClientSideConnection;
   sessionId: string;
   models: AgentModelDefinition[];
+  acpModels: NonNullable<SessionModelState["availableModels"]>;
   configOptions: SessionConfigOption[] | null | undefined;
   runRequest: <T>(request: () => Promise<T>) => Promise<T>;
   transformConfigOptions: (configOptions: SessionConfigOption[]) => SessionConfigOption[];
@@ -425,11 +426,10 @@ interface ACPAgentClientOptions {
     context: ACPProviderModeWriterContext,
   ) => Promise<ACPProviderModeWriteResult>;
   beforeModeWriter?: (context: ACPProviderModeWriterContext) => Promise<ACPBeforeModeWriteResult>;
-  thinkingOptionWriter?: (
-    connection: ClientSideConnection,
-    sessionId: string,
-    thinkingOptionId: string,
-  ) => Promise<void>;
+  thinkingOptionWriter?: (context: ACPThinkingOptionWriterContext) => Promise<void>;
+  sessionModelRequestMeta?: (
+    context: ACPSessionModelRequestMetaContext,
+  ) => Record<string, unknown> | undefined;
   capabilities?: AgentCapabilityFlags;
   extensionCommandsParser?: ACPExtensionCommandsParser;
   waitForInitialCommands?: boolean;
@@ -455,11 +455,10 @@ interface ACPAgentSessionOptions {
     context: ACPProviderModeWriterContext,
   ) => Promise<ACPProviderModeWriteResult>;
   beforeModeWriter?: (context: ACPProviderModeWriterContext) => Promise<ACPBeforeModeWriteResult>;
-  thinkingOptionWriter?: (
-    connection: ClientSideConnection,
-    sessionId: string,
-    thinkingOptionId: string,
-  ) => Promise<void>;
+  thinkingOptionWriter?: (context: ACPThinkingOptionWriterContext) => Promise<void>;
+  sessionModelRequestMeta?: (
+    context: ACPSessionModelRequestMetaContext,
+  ) => Record<string, unknown> | undefined;
   capabilities: AgentCapabilityFlags;
   extensionCommandsParser?: ACPExtensionCommandsParser;
   handle?: AgentPersistenceHandle;
@@ -592,6 +591,18 @@ export interface ACPProviderModeWriteResult {
 
 export interface ACPBeforeModeWriteResult {
   configOptions?: SessionConfigOption[];
+}
+
+export interface ACPThinkingOptionWriterContext {
+  connection: ClientSideConnection;
+  sessionId: string;
+  thinkingOptionId: string;
+  currentModelId: string | null;
+}
+
+export interface ACPSessionModelRequestMetaContext {
+  modelId: string;
+  thinkingOptionId: string | null;
 }
 
 export function mapACPUsage(usage: Usage | null | undefined): AgentUsage | undefined {
@@ -815,10 +826,11 @@ export class ACPAgentClient implements AgentClient {
     context: ACPProviderModeWriterContext,
   ) => Promise<ACPBeforeModeWriteResult>;
   private readonly thinkingOptionWriter?: (
-    connection: ClientSideConnection,
-    sessionId: string,
-    thinkingOptionId: string,
+    context: ACPThinkingOptionWriterContext,
   ) => Promise<void>;
+  private readonly sessionModelRequestMeta?: (
+    context: ACPSessionModelRequestMetaContext,
+  ) => Record<string, unknown> | undefined;
   private readonly waitForInitialCommands: boolean;
   private readonly initialCommandsWaitTimeoutMs: number;
   private readonly extensionCommandsParser?: ACPExtensionCommandsParser;
@@ -847,6 +859,7 @@ export class ACPAgentClient implements AgentClient {
     this.providerModeWriter = options.providerModeWriter;
     this.beforeModeWriter = options.beforeModeWriter;
     this.thinkingOptionWriter = options.thinkingOptionWriter;
+    this.sessionModelRequestMeta = options.sessionModelRequestMeta;
     this.waitForInitialCommands = options.waitForInitialCommands ?? false;
     this.initialCommandsWaitTimeoutMs = options.initialCommandsWaitTimeoutMs ?? 1500;
     this.extensionCommandsParser = options.extensionCommandsParser;
@@ -876,6 +889,7 @@ export class ACPAgentClient implements AgentClient {
         providerModeWriter: this.providerModeWriter,
         beforeModeWriter: this.beforeModeWriter,
         thinkingOptionWriter: this.thinkingOptionWriter,
+        sessionModelRequestMeta: this.sessionModelRequestMeta,
         capabilities: this.capabilities,
         agentId: launchContext?.agentId,
         launchEnv: launchContext?.env,
@@ -926,6 +940,7 @@ export class ACPAgentClient implements AgentClient {
       providerModeWriter: this.providerModeWriter,
       beforeModeWriter: this.beforeModeWriter,
       thinkingOptionWriter: this.thinkingOptionWriter,
+      sessionModelRequestMeta: this.sessionModelRequestMeta,
       capabilities: this.capabilities,
       handle,
       agentId: launchContext?.agentId,
@@ -991,6 +1006,7 @@ export class ACPAgentClient implements AgentClient {
                 connection: initializedProbe.connection,
                 sessionId: response.sessionId,
                 models: derivedModels,
+                acpModels: transformed.models?.availableModels ?? [],
                 configOptions: transformed.configOptions,
                 runRequest: (request) => this.runACPRequest(request),
                 transformConfigOptions: (configOptions) =>
@@ -1420,10 +1436,11 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     context: ACPProviderModeWriterContext,
   ) => Promise<ACPBeforeModeWriteResult>;
   private readonly thinkingOptionWriter?: (
-    connection: ClientSideConnection,
-    sessionId: string,
-    thinkingOptionId: string,
+    context: ACPThinkingOptionWriterContext,
   ) => Promise<void>;
+  private readonly sessionModelRequestMeta?: (
+    context: ACPSessionModelRequestMetaContext,
+  ) => Record<string, unknown> | undefined;
   private readonly agentId?: string;
   private readonly launchEnv?: Record<string, string>;
   private readonly subscribers = new Set<(event: AgentStreamEvent) => void>();
@@ -1482,6 +1499,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.providerModeWriter = options.providerModeWriter;
     this.beforeModeWriter = options.beforeModeWriter;
     this.thinkingOptionWriter = options.thinkingOptionWriter;
+    this.sessionModelRequestMeta = options.sessionModelRequestMeta;
     this.availableModes = options.defaultModes;
     this.agentId = options.agentId;
     this.launchEnv = options.launchEnv;
@@ -1934,9 +1952,14 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       }
 
       try {
+        const meta = this.sessionModelRequestMeta?.({
+          modelId,
+          thinkingOptionId: this.thinkingOptionId,
+        });
         await this.connection.unstable_setSessionModel({
           sessionId: this.sessionId,
           modelId,
+          ...(meta ? { _meta: meta } : {}),
         });
         this.currentModel = modelId;
         this.pushEvent({
@@ -1995,7 +2018,12 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
 
     if (this.thinkingOptionWriter) {
-      await this.thinkingOptionWriter(this.connection, this.sessionId, thinkingOptionId);
+      await this.thinkingOptionWriter({
+        connection: this.connection,
+        sessionId: this.sessionId,
+        thinkingOptionId,
+        currentModelId: this.currentModel,
+      });
       this.thinkingOptionId = thinkingOptionId;
       this.pushEvent({
         type: "thinking_option_changed",
@@ -2564,7 +2592,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.currentModel =
       transformed.models?.currentModelId ?? deriveCurrentConfigValue(this.configOptions, "model");
     this.thinkingOptionId =
-      deriveCurrentConfigValue(this.configOptions, "thought_level") ?? this.thinkingOptionId;
+      deriveCurrentConfigValue(this.configOptions, "thought_level") ??
+      deriveModelMetaReasoningEffort(this.availableModels, this.currentModel) ??
+      this.thinkingOptionId;
   }
 
   private transformConfigOptions(configOptions: SessionConfigOption[]): SessionConfigOption[] {
@@ -3129,6 +3159,22 @@ function deriveCurrentConfigValue(
       entry.type === "select" && entry.category === category,
   );
   return option?.currentValue ?? null;
+}
+
+function deriveModelMetaReasoningEffort(
+  models: AvailableACPModel[] | null | undefined,
+  modelId: string | null,
+): string | null {
+  if (!models || !modelId) {
+    return null;
+  }
+  const model = models.find((entry) => entry.modelId === modelId);
+  const meta = model?._meta;
+  if (!meta || meta.supportsReasoningEffort !== true) {
+    return null;
+  }
+  const effort = meta.reasoningEffort;
+  return typeof effort === "string" && effort.length > 0 ? effort : null;
 }
 
 function normalizeMcpServers(servers?: Record<string, McpServerConfig>): McpServer[] {

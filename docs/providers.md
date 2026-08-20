@@ -43,7 +43,9 @@ and tool identity without approving native tools.
 
 Extend `ACPAgentClient` from `packages/server/src/server/agent/providers/acp-agent.ts`. The base class handles process spawning, stdio transport, session lifecycle, streaming, permissions, and model discovery. You provide configuration (command, modes, capabilities) and optionally override `isAvailable()` for auth checks.
 
-The only built-in ACP provider today is `copilot` (`copilot-acp-agent.ts`). `GenericACPAgentClient` (`generic-acp-agent.ts`) is also ACP-based but is used for user-defined custom providers configured via `extends: "acp"` overrides — see [docs/custom-providers.md](custom-providers.md).
+The only built-in ACP provider today is `copilot` (`copilot-acp-agent.ts`). `GenericACPAgentClient` (`generic-acp-agent.ts`) is also ACP-based but is used for user-defined custom providers configured via `extends: "acp"` overrides — see [docs/custom-providers.md](custom-providers.md). Catalog ACP entries that need a vendor wire mapping get a thin subclass: Cursor, Kimi, Kiro, Trae, and Grok.
+
+Grok does not implement ACP `thought_level` config options. It advertises reasoning menus on each model's `_meta.reasoningEfforts` and applies a change with `session/set_model` plus `_meta.reasoningEffort` (canonical values: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). `grok-acp-agent.ts` maps that onto Paseo's thinking controls. Do not treat Grok's private `x.ai/sessionConfig` `category: "mode"` rows as Paseo modes.
 
 Copilot custom agents are exposed through ACP session config, not the slash-command list. When custom agents are available, Copilot returns a select config option with `id: "agent"` and `category: "_agent"`; Paseo maps that to the `agent` provider feature. Copilot uses the agent display name as the option value, and the blank value means the default Copilot agent.
 
