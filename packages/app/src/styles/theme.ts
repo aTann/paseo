@@ -218,7 +218,8 @@ const lightSemanticColors = {
   surfaceDiffEmpty: "#f6f6f6", // Empty side of split diff rows, between surface1 and surface2 and biased toward surface2
   surfaceSidebar: lightSurfaces.surface2, // Sidebar background (darker than main)
   surfaceSidebarHover: lightSurfaces.surface1,
-  surfaceSidebarSelected: lightSurfaces.surface2,
+  // Light sidebar is already surface2; selected has to lift or the active row vanishes.
+  surfaceSidebarSelected: lightSurfaces.surface0,
   surfaceWorkspace: lightSurfaces.surface0, // Workspace main background
 
   // Text

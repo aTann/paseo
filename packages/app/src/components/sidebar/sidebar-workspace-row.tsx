@@ -359,6 +359,7 @@ function WorkspaceRowBody({
                 serviceSummary={serviceSummary}
                 backdrop={backdrop}
                 isHovered={isHovered}
+                selected={selected}
                 isLoading={isArchiving || isCreating}
                 isCreating={isCreating}
                 shortcutNumber={shortcutNumber}

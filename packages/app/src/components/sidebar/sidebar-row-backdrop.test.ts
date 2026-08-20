@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { getSidebarRowBackdrop } from "./sidebar-row-backdrop";
 
 describe("getSidebarRowBackdrop", () => {
+  it("uses the selected surface at rest", () => {
+    expect(getSidebarRowBackdrop({ selected: true })).toBe("surfaceSidebarSelected");
+  });
+
   it("keeps selected rows on the selected surface while hovered", () => {
     expect(getSidebarRowBackdrop({ selected: true, isHovered: true })).toBe(
       "surfaceSidebarSelected",

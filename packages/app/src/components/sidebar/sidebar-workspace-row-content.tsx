@@ -95,6 +95,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   serviceSummary = null,
   backdrop,
   isHovered,
+  selected = false,
   isLoading,
   isCreating = false,
   shortcutNumber = null,
@@ -111,6 +112,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   /** The row's current background, so the project status badge can knock out of it. */
   backdrop: SidebarSurfaceBackdrop;
   isHovered: boolean;
+  selected?: boolean;
   isLoading: boolean;
   isCreating?: boolean;
   shortcutNumber?: number | null;
@@ -126,13 +128,14 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
   // The workspace carries label names; their colors live in its host's catalog, so the row is
   // where the two meet — the meta line is handed finished definitions.
   const labels = useWorkspaceLabelDefinitions(workspace.serverId, workspace.labels);
+  const workspaceTitleEmphasized = isHovered || selected;
   const workspaceBranchTextStyle = useMemo(
     () => [
       styles.workspaceBranchText,
-      isHovered && styles.workspaceBranchTextHovered,
+      workspaceTitleEmphasized && styles.workspaceBranchTextHovered,
       isCreating && styles.workspaceBranchTextCreating,
     ],
-    [isHovered, isCreating],
+    [isCreating, workspaceTitleEmphasized],
   );
 
   return (

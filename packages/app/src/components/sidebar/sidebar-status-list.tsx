@@ -919,6 +919,7 @@ function StatusWorkspaceRowInnerContent({
                 serviceSummary={serviceSummary}
                 backdrop={backdrop}
                 isHovered={isHovered}
+                selected={selected}
                 isLoading={isArchiving}
                 shortcutNumber={shortcutNumber}
                 showShortcutBadge={showShortcutBadge}

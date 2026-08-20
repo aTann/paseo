@@ -952,15 +952,16 @@ function ProjectHeaderRow({
     interaction.handlePressOut();
   }, [interaction]);
 
+  const accessibilityState = useMemo(() => ({ selected }), [selected]);
   const projectRowStyle = useCallback(
     ({ pressed }: PressableStateCallbackType) => [
       styles.projectRow,
-      isDragging && styles.projectRowDragging,
-      selected && styles.sidebarRowSelected,
       isHovered && styles.projectRowHovered,
+      selected && styles.sidebarRowSelected,
+      isDragging && styles.projectRowDragging,
       pressed && styles.projectRowPressed,
     ],
-    [isDragging, selected, isHovered],
+    [isDragging, isHovered, selected],
   );
 
   const rowChildren = (
@@ -978,7 +979,10 @@ function ProjectHeaderRow({
         />
 
         <View style={styles.projectTitleGroup}>
-          <Text style={styles.projectTitle} numberOfLines={1}>
+          <Text
+            style={[styles.projectTitle, selected && styles.projectTitleSelected]}
+            numberOfLines={1}
+          >
             {displayName}
           </Text>
         </View>
@@ -1015,6 +1019,8 @@ function ProjectHeaderRow({
       >
         <PressHighlight
           accessibilityRole="button"
+          accessibilityState={accessibilityState}
+          aria-selected={selected}
           style={projectRowStyle}
           highlightStyle={styles.projectRowPressed}
           onPressIn={handleProjectPressIn}
@@ -1041,6 +1047,8 @@ function ProjectHeaderRow({
         <ContextMenuTrigger
           enabledOnMobile={false}
           accessibilityRole="button"
+          accessibilityState={accessibilityState}
+          aria-selected={selected}
           style={projectRowStyle}
           highlightStyle={styles.projectRowPressed}
           onPressIn={handleProjectPressIn}
@@ -1190,6 +1198,7 @@ function WorkspaceRowInner({
                 serviceSummary={serviceSummary}
                 backdrop={backdrop}
                 isHovered={isHovered}
+                selected={selected}
                 isLoading={isArchiving || isCreating}
                 isCreating={isCreating}
                 shortcutNumber={shortcutNumber}
@@ -1847,7 +1856,9 @@ function ProjectBlock({
         displayName={displayName}
         iconDataUri={iconDataUri}
         statusBucket={aggregateStatusBucket}
-        selected={false}
+        // Expanded rows leave selection on the workspace. Collapsed rows have to
+        // carry it or the active workspace disappears from the list.
+        selected={collapsed && active}
         chevron={rowModel.chevron}
         onPress={handleToggleCollapsed}
         worktreeTarget={
@@ -2645,6 +2656,9 @@ const styles = StyleSheet.create((theme) => ({
     fontWeight: "400",
     minWidth: 0,
     flexShrink: 1,
+  },
+  projectTitleSelected: {
+    color: theme.colors.foreground,
   },
   projectActionButton: {
     flexDirection: "row",

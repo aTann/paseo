@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  darkClaudeTheme,
+  darkGhosttyTheme,
+  darkMidnightTheme,
   darkPureBlackTheme,
   darkTheme,
+  darkZincTheme,
   FONT_SIZE,
   getNextThemePreference,
   lightTheme,
@@ -67,11 +71,27 @@ describe("Pure black theme", () => {
 });
 
 describe("Sidebar interaction surfaces", () => {
-  it.each([lightTheme, darkTheme])(
-    "derives hover and selection from the surface scale",
-    (theme) => {
-      expect(theme.colors.surfaceSidebarHover).toBe(theme.colors.surface1);
-      expect(theme.colors.surfaceSidebarSelected).toBe(theme.colors.surface2);
-    },
-  );
+  it.each([
+    lightTheme,
+    darkTheme,
+    darkZincTheme,
+    darkMidnightTheme,
+    darkClaudeTheme,
+    darkGhosttyTheme,
+    darkPureBlackTheme,
+  ])("keeps hover and selected distinct from the sidebar", (theme) => {
+    expect(theme.colors.surfaceSidebarHover).not.toBe(theme.colors.surfaceSidebar);
+    expect(theme.colors.surfaceSidebarSelected).not.toBe(theme.colors.surfaceSidebar);
+    expect(theme.colors.surfaceSidebarSelected).not.toBe(theme.colors.surfaceSidebarHover);
+  });
+
+  it("lifts light selection onto the workspace surface", () => {
+    expect(lightTheme.colors.surfaceSidebarHover).toBe(lightTheme.colors.surface1);
+    expect(lightTheme.colors.surfaceSidebarSelected).toBe(lightTheme.colors.surface0);
+  });
+
+  it("lifts dark selection along the surface scale", () => {
+    expect(darkTheme.colors.surfaceSidebarHover).toBe(darkTheme.colors.surface1);
+    expect(darkTheme.colors.surfaceSidebarSelected).toBe(darkTheme.colors.surface2);
+  });
 });
