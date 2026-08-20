@@ -141,6 +141,7 @@ export function createFakeCodexAppServer(
     "thread/start": () => ({ thread: { id: "thread-1" } }),
     "thread/loaded/list": () => ({ data: [] }),
     "thread/resume": () => ({}),
+    "thread/settings/update": () => ({}),
     "turn/start": () => ({}),
     "thread/fork": (params) => ({
       thread: {

@@ -32,6 +32,21 @@ const TEST_COLLABORATION_MODES: CollaborationModeRecord[] = [
   },
 ];
 
+const CODEX_147_COLLABORATION_MODES: CollaborationModeRecord[] = [
+  {
+    name: "Plan",
+    mode: "plan",
+    model: null,
+    reasoning_effort: "medium",
+  },
+  {
+    name: "Default",
+    mode: "default",
+    model: null,
+    reasoning_effort: null,
+  },
+];
+
 type CodexFeaturesTestSession = AgentSession;
 
 interface CapturedLogEntry {
@@ -65,14 +80,19 @@ function createConfig(overrides: Partial<AgentSessionConfig> = {}): AgentSession
 
 function createSessionHarness(
   configOverrides: Partial<AgentSessionConfig> = {},
-  options: { logger?: pino.Logger } = {},
+  options: {
+    logger?: pino.Logger;
+    collaborationModes?: CollaborationModeRecord[];
+  } = {},
 ): {
   session: CodexFeaturesTestSession;
   appServer: FakeCodexAppServer;
 } {
   const config = createConfig(configOverrides);
   const appServer = createFakeCodexAppServer({
-    "collaborationMode/list": () => ({ data: TEST_COLLABORATION_MODES }),
+    "collaborationMode/list": () => ({
+      data: options.collaborationModes ?? TEST_COLLABORATION_MODES,
+    }),
   });
   const session = new CodexAppServerAgentSession(
     { ...config, provider: CODEX_PROVIDER },
@@ -85,7 +105,10 @@ function createSessionHarness(
 
 async function createConnectedSession(
   configOverrides: Partial<AgentSessionConfig> = {},
-  options: { logger?: pino.Logger } = {},
+  options: {
+    logger?: pino.Logger;
+    collaborationModes?: CollaborationModeRecord[];
+  } = {},
 ): Promise<{
   session: CodexFeaturesTestSession;
   appServer: FakeCodexAppServer;
@@ -341,9 +364,165 @@ describe("Codex app-server provider features", () => {
     await session.startTurn("hello");
 
     await expect(appServer.waitForTurnStart()).resolves.toMatchObject({
-      collaborationMode: expect.objectContaining({
+      collaborationMode: {
         mode: "plan",
-      }),
+        settings: expect.objectContaining({
+          model: "gpt-5.4",
+        }),
+      },
     });
+  });
+
+  test("startTurn sends Codex 0.147 plan collaborationMode with required settings.model", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { featureValues: { plan_mode: true } },
+      { collaborationModes: CODEX_147_COLLABORATION_MODES },
+    );
+
+    await session.startTurn("hello");
+
+    await expect(appServer.waitForTurnStart()).resolves.toEqual(
+      expect.objectContaining({
+        collaborationMode: {
+          mode: "plan",
+          settings: expect.objectContaining({
+            model: "gpt-5.4",
+          }),
+        },
+      }),
+    );
+  });
+
+  test("startTurn sends Codex 0.147 default collaborationMode when plan is off", async () => {
+    const { session, appServer } = await createConnectedSession(
+      {},
+      { collaborationModes: CODEX_147_COLLABORATION_MODES },
+    );
+
+    await session.startTurn("hello");
+
+    await expect(appServer.waitForTurnStart()).resolves.toEqual(
+      expect.objectContaining({
+        collaborationMode: {
+          mode: "default",
+          settings: expect.objectContaining({
+            model: "gpt-5.4",
+          }),
+        },
+      }),
+    );
+  });
+
+  test("startTurn fills collaborationMode settings.model after resolving the session model", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { model: null, featureValues: { plan_mode: true } },
+      { collaborationModes: CODEX_147_COLLABORATION_MODES },
+    );
+
+    await session.startTurn("hello");
+
+    await expect(appServer.waitForTurnStart()).resolves.toEqual(
+      expect.objectContaining({
+        collaborationMode: {
+          mode: "plan",
+          settings: expect.objectContaining({
+            model: "gpt-5.4",
+          }),
+        },
+      }),
+    );
+  });
+
+  test("thread/start includes collaborationMode when plan mode is restored", async () => {
+    const { session, appServer } = await createConnectedSession(
+      { featureValues: { plan_mode: true } },
+      { collaborationModes: CODEX_147_COLLABORATION_MODES },
+    );
+
+    await session.startTurn("hello");
+
+    await expect(appServer.waitForRequest("thread/start")).resolves.toEqual(
+      expect.objectContaining({
+        collaborationMode: {
+          mode: "plan",
+          settings: expect.objectContaining({
+            model: "gpt-5.4",
+          }),
+        },
+      }),
+    );
+  });
+
+  test("setFeature('plan_mode') updates the current thread collaboration mode", async () => {
+    const { session, appServer } = await createConnectedSession(
+      {},
+      { collaborationModes: CODEX_147_COLLABORATION_MODES },
+    );
+
+    await session.startTurn("hello");
+    await appServer.waitForTurnStart();
+    await session.setFeature?.("plan_mode", true);
+
+    await expect(appServer.waitForRequest("thread/settings/update")).resolves.toEqual({
+      threadId: "thread-1",
+      collaborationMode: {
+        mode: "plan",
+        settings: expect.objectContaining({
+          model: "gpt-5.4",
+        }),
+      },
+    });
+  });
+
+  test("startTurn does not replace Codex plan developer_instructions with the session system prompt", async () => {
+    const { session, appServer } = await createConnectedSession(
+      {
+        featureValues: { plan_mode: true },
+        systemPrompt: "Always respond in 中文(Simplified Chinese)",
+      },
+      { collaborationModes: CODEX_147_COLLABORATION_MODES },
+    );
+
+    await session.startTurn("hello");
+    const turnStart = await appServer.waitForTurnStart();
+
+    expect(turnStart).toEqual(
+      expect.objectContaining({
+        developerInstructions: "Always respond in 中文(Simplified Chinese)",
+        collaborationMode: {
+          mode: "plan",
+          settings: {
+            model: "gpt-5.4",
+            reasoning_effort: "medium",
+          },
+        },
+      }),
+    );
+  });
+
+  test("startTurn forwards list-provided collaboration developer_instructions without mixing in the session system prompt", async () => {
+    const { session, appServer } = await createConnectedSession(
+      {
+        featureValues: { plan_mode: true },
+        systemPrompt: "Always respond in 中文(Simplified Chinese)",
+      },
+      { collaborationModes: TEST_COLLABORATION_MODES },
+    );
+
+    await session.startTurn("hello");
+    const turnStart = await appServer.waitForTurnStart();
+
+    expect(turnStart).toEqual(
+      expect.objectContaining({
+        developerInstructions: "Always respond in 中文(Simplified Chinese)",
+        collaborationMode: {
+          mode: "plan",
+          settings: expect.objectContaining({
+            model: "gpt-5.4",
+            developer_instructions: "Built-in plan mode",
+          }),
+        },
+      }),
+    );
   });
 });
