@@ -27,7 +27,7 @@ import { useMutation } from "@tanstack/react-query";
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated";
 import { Check, ChevronDown, X } from "lucide-react-native";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
-import { openExplorerSurface } from "@/workspace-tabs/explorer-surface";
+import { openSidePanelView } from "@/workspace-tabs/side-panel";
 import {
   AssistantMessage,
   SpeakMessage,
@@ -105,6 +105,7 @@ import { isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
 import { recordRenderProfileReasons } from "@/utils/render-profiler";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { useStreamHistoryWindow } from "./use-stream-history-window";
 
 function renderLiveAuxiliaryNode(input: {
   pendingPermissions: ReactNode;
@@ -259,6 +260,8 @@ export interface AgentStreamViewProps {
   isAuthoritativeHistoryReady?: boolean;
   /** Tail space required by a transparent overlay rendered at the bottom edge. */
   bottomOverlayTailClearance?: number;
+  /** Bottom offset required for controls floating above that overlay. */
+  bottomOverlayControlClearance?: number;
   toast?: ToastApi | null;
   onOpenWorkspaceFile?: (request: WorkspaceFileOpenRequest) => void;
   readOnly?: boolean;
@@ -294,6 +297,10 @@ function useRetainedValue<T>(value: T, active: boolean): T {
 const EMPTY_PENDING_MESSAGE_SUBMISSIONS: readonly PendingMessageSubmission[] = [];
 const GROUPED_TOOL_CALL_DETAIL_MAX_HEIGHT = 200;
 
+function resolveBottomOverlayControlOffset(clearance: number | undefined): number {
+  return Math.max(16, clearance ?? 0);
+}
+
 const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamViewProps>(
   function AgentStreamView(
     {
@@ -308,6 +315,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       routeBottomAnchorRequest = null,
       isAuthoritativeHistoryReady = true,
       bottomOverlayTailClearance = 0,
+      bottomOverlayControlClearance,
       toast,
       onOpenWorkspaceFile,
       readOnly = false,
@@ -376,7 +384,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       agentId,
       toast,
     });
-    const { isLoadingOlder, hasOlder, progressKey, loadOlder } = historyPagination
+    const {
+      isLoadingOlder: remoteIsLoadingOlder,
+      hasOlder: remoteHasOlder,
+      progressKey: remoteProgressKey,
+      loadOlder: loadRemoteOlder,
+    } = historyPagination
       ? {
           isLoadingOlder: historyPagination.isLoadingOlder,
           hasOlder: historyPagination.hasOlder,
@@ -444,7 +457,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           setCurrentPath: false,
         });
 
-        openExplorerSurface({
+        openSidePanelView({
           isCompact: isMobile,
           workspaceKey: buildWorkspaceTabPersistenceKey({
             serverId: resolvedServerId,
@@ -520,6 +533,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         toolCallDetailLevel,
       ],
     );
+    const {
+      start: historyWindowStart,
+      hasLocalHistory,
+      revealLoadedHistory,
+      loadOlder,
+    } = useStreamHistoryWindow({
+      agentId,
+      items: projectedToolCalls.tail,
+      loadRemoteOlder,
+    });
+    const isLoadingOlder = remoteIsLoadingOlder;
+    const hasOlder = hasLocalHistory || remoteHasOlder;
+    const progressKey = `${remoteProgressKey ?? "local"}:${historyWindowStart}`;
 
     const baseRenderModel = useMemo(() => {
       return buildAgentStreamRenderModel({
@@ -529,6 +555,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         head: projectedToolCalls.head,
         platform: isWeb ? "web" : "native",
         isMobileBreakpoint: isMobile,
+        historyStart: historyWindowStart,
       });
     }, [
       isMobile,
@@ -536,6 +563,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       projectedToolCalls.head,
       projectedToolCalls.tail,
       effectiveTurnPresentation.startedAt,
+      historyWindowStart,
     ]);
     const streamLayout = useMemo(
       () =>
@@ -557,6 +585,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const handleTimelineHistoryLoadError = useCallback(() => {
       toast?.error(t("agentStream.historyLoadFailed"));
     }, [t, toast]);
+    const visibleHistoryItemIds = useMemo(
+      () =>
+        new Set(
+          [...baseRenderModel.history, ...baseRenderModel.segments.liveHead].map((item) => item.id),
+        ),
+      [baseRenderModel.history, baseRenderModel.segments.liveHead],
+    );
     const chatOutline = useChatOutline({
       agentId,
       serverId: resolvedServerId,
@@ -566,6 +601,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       enabled: supportsChatOutline && chatOutlineEnabled,
       viewportRef,
       onJumpError: handleTimelineHistoryLoadError,
+      visibleItemIds: visibleHistoryItemIds,
+      revealLoadedItem: revealLoadedHistory,
     });
 
     useImperativeHandle(
@@ -904,6 +941,13 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     }, [baseRenderModel, pendingPermissionsNode, turnFooterNode]);
 
     const emptyStateStyle = useMemo(() => [stylesheet.emptyState, stylesheet.contentWrapper], []);
+    const scrollToBottomContainerStyle = useMemo(
+      () => [
+        stylesheet.scrollToBottomContainer,
+        { bottom: resolveBottomOverlayControlOffset(bottomOverlayControlClearance) },
+      ],
+      [bottomOverlayControlClearance],
+    );
     const listEmptyComponent = useMemo(
       () =>
         renderListEmptyComponent({
@@ -1035,7 +1079,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             onJumpToPrompt={chatOutline.jumpToPrompt}
           />
           {(!isNearBottom || isTimelineDetached) && (
-            <View style={stylesheet.scrollToBottomContainer} pointerEvents="box-none">
+            <View style={scrollToBottomContainerStyle} pointerEvents="box-none">
               <Animated.View entering={scrollIndicatorFadeIn} exiting={scrollIndicatorFadeOut}>
                 <Pressable
                   style={stylesheet.scrollToBottomButton}
@@ -1544,7 +1588,6 @@ const stylesheet = StyleSheet.create((theme) => ({
   },
   scrollToBottomContainer: {
     position: "absolute",
-    bottom: 16,
     left: 0,
     right: 0,
     alignItems: "center",
