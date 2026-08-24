@@ -82,4 +82,26 @@ describe("GenericACPAgentClient", () => {
       },
     });
   });
+
+  test("forwards conversation rewind capability and handler", () => {
+    const conversationRewinder = async () => {};
+    const _client = new GenericACPAgentClient({
+      logger: createTestLogger(),
+      command: ["grok", "agent", "stdio"],
+      capabilities: {
+        supportsRewindConversation: true,
+      },
+      conversationRewinder,
+    });
+    void _client;
+
+    expect(mockState.superConstructorOptions.at(-1)).toMatchObject({
+      capabilities: {
+        supportsRewindConversation: true,
+        supportsRewindFiles: false,
+        supportsRewindBoth: false,
+      },
+      conversationRewinder,
+    });
+  });
 });

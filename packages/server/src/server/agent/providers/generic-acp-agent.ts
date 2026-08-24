@@ -7,6 +7,7 @@ import {
   ACPAgentClient,
   type ACPCatalogModelResolver,
   type ACPClientCapabilityMeta,
+  type ACPConversationRewinder,
   type ACPConfigFeatureOption,
   type ACPCurrentModeUpdateHandler,
   DEFAULT_ACP_CAPABILITIES,
@@ -83,6 +84,8 @@ interface GenericACPAgentClientOptions {
   sessionResponseTransformer?: (response: SessionStateResponse) => SessionStateResponse;
   toolSnapshotTransformer?: (snapshot: ACPToolSnapshot) => ACPToolSnapshot;
   toolDetailMapper?: ACPToolDetailMapper;
+  capabilities?: Partial<AgentCapabilityFlags>;
+  conversationRewinder?: ACPConversationRewinder;
 }
 
 export class GenericACPAgentClient extends ACPAgentClient {
@@ -100,7 +103,10 @@ export class GenericACPAgentClient extends ACPAgentClient {
         env: options.env,
       },
       defaultCommand: options.command,
-      capabilities: buildGenericACPCapabilities(providerParams),
+      capabilities: {
+        ...buildGenericACPCapabilities(providerParams),
+        ...options.capabilities,
+      },
       waitForInitialCommands: options.waitForInitialCommands,
       initialCommandsWaitTimeoutMs: options.initialCommandsWaitTimeoutMs,
       clientCapabilities: providerParams.clientCapabilities,
@@ -123,6 +129,9 @@ export class GenericACPAgentClient extends ACPAgentClient {
       sessionResponseTransformer: options.sessionResponseTransformer,
       toolSnapshotTransformer: options.toolSnapshotTransformer,
       toolDetailMapper: options.toolDetailMapper,
+      ...(options.conversationRewinder
+        ? { conversationRewinder: options.conversationRewinder }
+        : {}),
     });
 
     this.command = options.command;

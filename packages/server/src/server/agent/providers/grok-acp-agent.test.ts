@@ -58,6 +58,16 @@ function isolateGrokAuthEnv(): void {
 }
 
 describe("GrokACPAgentClient", () => {
+  test("advertises conversation rewind without file rewind", () => {
+    const client = new GrokACPAgentClient({
+      logger: createTestLogger(),
+      command: ["grok", "agent", "stdio"],
+    });
+    expect(client.capabilities.supportsRewindConversation).toBe(true);
+    expect(client.capabilities.supportsRewindFiles).toBe(false);
+    expect(client.capabilities.supportsRewindBoth).toBe(false);
+  });
+
   test("exposes Grok initialize commands with command and skill metadata", () => {
     const response = {
       _meta: {

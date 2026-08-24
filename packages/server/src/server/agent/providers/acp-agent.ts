@@ -253,6 +253,15 @@ const BASE_ACP_CLIENT_CAPABILITIES: ACPClientCapabilities = {
 
 export type ACPClientCapabilityMeta = Record<string, unknown>;
 
+export interface ACPConversationRewindContext {
+  sessionId: string;
+  messageId: string;
+  userMessageIds: readonly string[];
+  extMethod: (method: string, params: Record<string, unknown>) => Promise<unknown>;
+}
+
+export type ACPConversationRewinder = (context: ACPConversationRewindContext) => Promise<void>;
+
 export function buildACPClientCapabilities(
   meta?: ACPClientCapabilityMeta,
   override?: ACPClientCapabilities,
@@ -468,6 +477,7 @@ interface ACPAgentClientOptions {
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
+  conversationRewinder?: ACPConversationRewinder;
 }
 
 interface ACPAgentSessionOptions {
@@ -509,6 +519,7 @@ interface ACPAgentSessionOptions {
   waitForInitialCommands?: boolean;
   initialCommandsWaitTimeoutMs?: number;
   terminateProcess?: ProcessTerminator;
+  conversationRewinder?: ACPConversationRewinder;
 }
 
 export interface SpawnedACPProcess {
@@ -912,6 +923,7 @@ export class ACPAgentClient implements AgentClient {
   private readonly initialCommandsParser?: ACPInitialCommandsParser;
   private readonly extensionNotificationParser?: ACPExtensionNotificationParser;
   private readonly forwardChildSessionUpdates: boolean;
+  private readonly conversationRewinder?: ACPConversationRewinder;
   protected readonly terminateProcess: ProcessTerminator;
 
   constructor(options: ACPAgentClientOptions) {
@@ -950,6 +962,7 @@ export class ACPAgentClient implements AgentClient {
     this.initialCommandsParser = options.initialCommandsParser;
     this.extensionNotificationParser = options.extensionNotificationParser;
     this.forwardChildSessionUpdates = options.forwardChildSessionUpdates ?? false;
+    this.conversationRewinder = options.conversationRewinder;
   }
 
   async createSession(
@@ -992,6 +1005,7 @@ export class ACPAgentClient implements AgentClient {
         forwardChildSessionUpdates: this.forwardChildSessionUpdates,
         waitForInitialCommands: this.waitForInitialCommands,
         initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
+        conversationRewinder: this.conversationRewinder,
       },
     );
     await session.initializeNewSession();
@@ -1053,6 +1067,7 @@ export class ACPAgentClient implements AgentClient {
       forwardChildSessionUpdates: this.forwardChildSessionUpdates,
       waitForInitialCommands: this.waitForInitialCommands,
       initialCommandsWaitTimeoutMs: this.initialCommandsWaitTimeoutMs,
+      conversationRewinder: this.conversationRewinder,
     });
     await session.initializeResumedSession();
     return session;
@@ -1587,6 +1602,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private readonly initialCommandsParser?: ACPInitialCommandsParser;
   private readonly extensionNotificationParser?: ACPExtensionNotificationParser;
   private readonly forwardChildSessionUpdates: boolean;
+  private readonly conversationRewinder?: ACPConversationRewinder;
+  private readonly rewindTimeline: AgentTimelineItem[] = [];
+  private readonly rewindUserMessageIds: string[] = [];
+  private readonly rewindUserMessageIndex = new Map<string, number>();
   private readonly providerSubagentSessionUpdateStates = new Map<
     string,
     SessionContentTranslationState
@@ -1641,6 +1660,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.initialCommandsParser = options.initialCommandsParser;
     this.extensionNotificationParser = options.extensionNotificationParser;
     this.forwardChildSessionUpdates = options.forwardChildSessionUpdates ?? false;
+    this.conversationRewinder = options.conversationRewinder;
   }
 
   get id(): string | null {
@@ -1839,6 +1859,24 @@ export class ACPAgentSession implements AgentSession, ACPClient {
 
   async getCurrentMode(): Promise<string | null> {
     return this.currentMode;
+  }
+
+  async revertConversation(input: { messageId: string }): Promise<void> {
+    if (!this.conversationRewinder) {
+      throw new Error(`${this.provider} does not support rewinding conversation`);
+    }
+    if (!this.sessionId || !this.connection) {
+      throw new Error(`${this.provider} session is not ready for rewind`);
+    }
+    const connection = this.connection;
+    const canonicalMessageId = this.resolveRewindCanonicalMessageId(input.messageId);
+    await this.conversationRewinder({
+      sessionId: this.sessionId,
+      messageId: canonicalMessageId,
+      userMessageIds: this.rewindUserMessageIds,
+      extMethod: (method, params) => this.runACPRequest(() => connection.extMethod(method, params)),
+    });
+    this.truncateRewindTimeline(canonicalMessageId);
   }
 
   get features(): AgentFeature[] {
@@ -2702,6 +2740,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       for (const event of events) {
         if (event.type === "timeline") {
           this.persistedHistory.push(event.item);
+          this.recordRewindTimelineItem(event.item);
         }
       }
       return;
@@ -3151,6 +3190,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       return [];
     }
     this.pendingUserMessage = null;
+    if (pending.messageId) {
+      this.aliasRewindUserMessage(pending.messageId);
+    }
     return [
       this.wrapTimeline({
         type: "user_message",
@@ -3325,9 +3367,80 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       },
       "provider.acp.event_emit",
     );
+    if (event.type === "timeline") {
+      this.recordRewindTimelineItem(event.item);
+    }
     for (const subscriber of this.subscribers) {
       subscriber(event);
     }
+  }
+
+  private recordRewindTimelineItem(item: AgentTimelineItem): void {
+    if (!this.conversationRewinder) {
+      return;
+    }
+    this.rewindTimeline.push(item);
+    if (item.type === "user_message" && item.messageId) {
+      this.rememberRewindUserMessage(item.messageId);
+    }
+  }
+
+  private rememberRewindUserMessage(messageId: string): void {
+    if (!this.conversationRewinder || this.rewindUserMessageIndex.has(messageId)) {
+      return;
+    }
+    this.rewindUserMessageIndex.set(messageId, this.rewindUserMessageIds.length);
+    this.rewindUserMessageIds.push(messageId);
+  }
+
+  private aliasRewindUserMessage(messageId: string): void {
+    if (!this.conversationRewinder || this.rewindUserMessageIndex.has(messageId)) {
+      return;
+    }
+    const canonicalId = this.rewindUserMessageIds.at(-1);
+    if (!canonicalId) {
+      this.rememberRewindUserMessage(messageId);
+      return;
+    }
+    const index = this.rewindUserMessageIndex.get(canonicalId);
+    if (index === undefined) {
+      this.rememberRewindUserMessage(messageId);
+      return;
+    }
+    this.rewindUserMessageIndex.set(messageId, index);
+  }
+
+  private resolveRewindCanonicalMessageId(messageId: string): string {
+    const index = this.rewindUserMessageIndex.get(messageId);
+    if (index === undefined) {
+      return messageId;
+    }
+    return this.rewindUserMessageIds[index] ?? messageId;
+  }
+
+  private truncateRewindTimeline(messageId: string): void {
+    const index = this.rewindTimeline.findIndex((item) => {
+      if (item.type !== "user_message") {
+        return false;
+      }
+      return item.messageId === messageId || item.clientMessageId === messageId;
+    });
+    if (index < 0) {
+      throw new Error(
+        `${this.provider} rewind target ${messageId} is not in the tracked conversation`,
+      );
+    }
+    this.rewindTimeline.length = index;
+    this.rewindUserMessageIds.length = 0;
+    this.rewindUserMessageIndex.clear();
+    for (const item of this.rewindTimeline) {
+      if (item.type === "user_message" && item.messageId) {
+        this.rememberRewindUserMessage(item.messageId);
+      }
+    }
+    this.persistedHistory.length = 0;
+    this.persistedHistory.push(...this.rewindTimeline);
+    this.historyPending = true;
   }
 
   private emitSubmittedUserMessage(
@@ -3341,6 +3454,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       return;
     }
     this.submittedUserMessageTurnId = turnId;
+    this.rememberRewindUserMessage(messageId);
     this.pushEvent({
       type: "timeline",
       provider: this.provider,
