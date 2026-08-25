@@ -258,9 +258,8 @@ export interface ACPConversationRewindContext {
   cwd: string;
   messageId: string;
   userMessageIds: readonly string[];
+  mode: "conversation" | "files" | "both";
   extMethod: (method: string, params: Record<string, unknown>) => Promise<unknown>;
-  loadSession: (sessionId: string) => Promise<void>;
-  startFreshSession: () => Promise<void>;
 }
 
 export type ACPConversationRewinder = (context: ACPConversationRewindContext) => Promise<void>;
@@ -1619,7 +1618,6 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   private closed = false;
   private historyPending = false;
   private replayingHistory = false;
-  private suppressedSessionUpdateSessionId: string | null = null;
   private bootstrapThreadEventPending = false;
   private readonly terminateProcess: ProcessTerminator;
 
@@ -1866,24 +1864,39 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   }
 
   async revertConversation(input: { messageId: string }): Promise<void> {
+    await this.rewindToMessage(input.messageId, "conversation");
+  }
+
+  async revertFiles(input: { messageId: string }): Promise<void> {
+    await this.rewindToMessage(input.messageId, "files");
+  }
+
+  async revertBoth(input: { messageId: string }): Promise<void> {
+    await this.rewindToMessage(input.messageId, "both");
+  }
+
+  private async rewindToMessage(
+    messageId: string,
+    mode: ACPConversationRewindContext["mode"],
+  ): Promise<void> {
     if (!this.conversationRewinder) {
-      throw new Error(`${this.provider} does not support rewinding conversation`);
+      throw new Error(`${this.provider} does not support rewinding ${mode}`);
     }
     if (!this.sessionId || !this.connection) {
       throw new Error(`${this.provider} session is not ready for rewind`);
     }
     const connection = this.connection;
-    const canonicalMessageId = this.resolveRewindCanonicalMessageId(input.messageId);
+    const canonicalMessageId = this.resolveRewindCanonicalMessageId(messageId);
     await this.conversationRewinder({
       sessionId: this.sessionId,
       cwd: this.config.cwd,
       messageId: canonicalMessageId,
       userMessageIds: this.rewindUserMessageIds,
+      mode,
       extMethod: (method, params) => this.runACPRequest(() => connection.extMethod(method, params)),
-      loadSession: (sessionId) => this.loadAcpSessionForRewind(sessionId),
-      startFreshSession: () => this.startFreshAcpSession(),
     });
     if (
+      mode !== "files" &&
       this.rewindTimeline.some((item) => this.isRewindTargetUserMessage(item, canonicalMessageId))
     ) {
       this.truncateRewindTimeline(canonicalMessageId);
@@ -2518,9 +2531,6 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       },
       "provider.acp.raw_event",
     );
-    if (params.sessionId === this.suppressedSessionUpdateSessionId) {
-      return;
-    }
     if (params.sessionId !== this.sessionId) {
       if (!this.forwardChildSessionUpdates) {
         return;
@@ -3445,60 +3455,6 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       item.type === "user_message" &&
       (item.messageId === messageId || item.clientMessageId === messageId)
     );
-  }
-
-  private async startFreshAcpSession(): Promise<void> {
-    const connection = this.connection;
-    if (!connection) {
-      throw new Error(`${this.provider} session is not ready for rewind`);
-    }
-    const response = await this.runACPRequest(() =>
-      connection.newSession({
-        cwd: this.config.cwd,
-        mcpServers: this.acpMcpServers(),
-      }),
-    );
-    this.sessionId = response.sessionId;
-    this.applySessionState(response);
-    await this.applyConfiguredOverrides();
-    this.rewindTimeline.length = 0;
-    this.rewindUserMessageIds.length = 0;
-    this.rewindUserMessageIndex.clear();
-    this.persistedHistory.length = 0;
-    this.historyPending = true;
-    this.bootstrapThreadEventPending = true;
-    this.pushEvent({
-      type: "thread_started",
-      provider: this.provider,
-      sessionId: response.sessionId,
-    });
-  }
-
-  private async loadAcpSessionForRewind(sessionId: string): Promise<void> {
-    const connection = this.connection;
-    if (!connection) {
-      throw new Error(`${this.provider} session is not ready for rewind`);
-    }
-    this.suppressedSessionUpdateSessionId = sessionId;
-    try {
-      const response = await this.runACPRequest(() =>
-        connection.loadSession({
-          sessionId,
-          cwd: this.config.cwd,
-          mcpServers: this.acpMcpServers(),
-        }),
-      );
-      this.sessionId = sessionId;
-      this.applySessionState(response);
-      await this.applyConfiguredOverrides();
-      this.pushEvent({
-        type: "thread_started",
-        provider: this.provider,
-        sessionId,
-      });
-    } finally {
-      this.suppressedSessionUpdateSessionId = null;
-    }
   }
 
   private truncateRewindTimeline(messageId: string): void {

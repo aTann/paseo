@@ -34,7 +34,7 @@ import type {
   SessionStateResponse,
 } from "./acp-agent.js";
 import { GenericACPAgentClient } from "./generic-acp-agent.js";
-import { revertGrokConversation } from "./grok-rewind.js";
+import { revertGrok } from "./grok-rewind.js";
 import { readGrokSubagentDiskMeta } from "./grok-subagent-meta.js";
 import { mapGrokAcpToolDetail, transformGrokAcpToolSnapshot } from "./grok-tool-mapper.js";
 
@@ -727,10 +727,10 @@ export class GrokACPAgentClient extends GenericACPAgentClient {
       toolDetailMapper: mapGrokAcpToolDetail,
       capabilities: {
         supportsRewindConversation: true,
-        supportsRewindFiles: false,
-        supportsRewindBoth: false,
+        supportsRewindFiles: true,
+        supportsRewindBoth: true,
       },
-      conversationRewinder: revertGrokConversation,
+      conversationRewinder: revertGrok,
     });
     this.configuredEnv = options.env ?? {};
   }

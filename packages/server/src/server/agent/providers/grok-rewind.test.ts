@@ -1,8 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { asInternals } from "../../test-utils/class-mocks.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
@@ -11,16 +7,14 @@ import { ACPAgentSession } from "./acp-agent.js";
 import {
   GROK_REWIND_EXECUTE_METHOD,
   GROK_REWIND_POINTS_METHOD,
-  GROK_SESSION_FORK_METHOD,
   parseGrokRewindPoints,
   resolveGrokRewindPromptIndex,
-  revertGrokConversation,
-  truncateGrokSessionHistory,
+  revertGrok,
 } from "./grok-rewind.js";
-import { encodeGrokSessionsCwdDirname } from "./grok-subagent-meta.js";
 
 interface RewindSessionInternals {
   sessionId: string | null;
+  rewindTimeline: AgentTimelineItem[];
   connection: {
     extMethod: (...args: unknown[]) => Promise<unknown>;
     loadSession: (...args: unknown[]) => Promise<Record<string, unknown>>;
@@ -49,44 +43,6 @@ describe("parseGrokRewindPoints", () => {
       { prompt_index: 2 },
     ]);
     expect(parseGrokRewindPoints([{ prompt_index: 3 }])).toEqual([{ prompt_index: 3 }]);
-  });
-});
-
-describe("truncateGrokSessionHistory", () => {
-  test("keeps updates, chat, and rewind points before the clicked prompt", () => {
-    const truncated = truncateGrokSessionHistory({
-      keepPromptCount: 1,
-      updatesJsonl: [
-        updateLine(0, "one"),
-        thoughtLine("thinking one"),
-        assistantLine("one"),
-        updateLine(1, "two"),
-        assistantLine("two"),
-      ].join("\n"),
-      chatHistoryJsonl: [
-        JSON.stringify({ type: "system", content: "sys" }),
-        JSON.stringify({ type: "user", prompt_index: 0, content: "one" }),
-        JSON.stringify({ type: "assistant", content: "one" }),
-        JSON.stringify({ type: "user", prompt_index: 1, content: "two" }),
-        JSON.stringify({ type: "assistant", content: "two" }),
-      ].join("\n"),
-      rewindPointsJsonl: [
-        JSON.stringify({ prompt_index: 0 }),
-        JSON.stringify({ prompt_index: 1 }),
-      ].join("\n"),
-    });
-
-    expect(truncated.updatesJsonl).toBe(
-      [updateLine(0, "one"), thoughtLine("thinking one"), assistantLine("one")].join("\n") + "\n",
-    );
-    expect(truncated.chatHistoryJsonl).toBe(
-      [
-        JSON.stringify({ type: "system", content: "sys" }),
-        JSON.stringify({ type: "user", prompt_index: 0, content: "one" }),
-        JSON.stringify({ type: "assistant", content: "one" }),
-      ].join("\n") + "\n",
-    );
-    expect(truncated.rewindPointsJsonl).toBe(`${JSON.stringify({ prompt_index: 0 })}\n`);
   });
 });
 
@@ -122,71 +78,55 @@ describe("resolveGrokRewindPromptIndex", () => {
   });
 });
 
-describe("revertGrokConversation", () => {
-  const tempDirs: string[] = [];
+describe("revertGrok", () => {
+  test("executes the first prompt with force instead of opening a new session", async () => {
+    const recorded: Array<{ method: string; params: Record<string, unknown> }> = [];
 
-  afterEach(() => {
-    for (const dir of tempDirs.splice(0)) {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  test("starts a fresh session when rewinding the first prompt", async () => {
-    const recorded: string[] = [];
-
-    await revertGrokConversation({
+    await revertGrok({
       sessionId: "session-1",
       cwd: "/workspace",
       messageId: "msg-a",
       userMessageIds: ["msg-a", "msg-b"],
-      extMethod: async (method) => {
-        recorded.push(method);
-        if (method === GROK_REWIND_POINTS_METHOD) {
-          return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
-        }
-        throw new Error("execute should not run for the first prompt");
-      },
-      loadSession: async () => {
-        throw new Error("loadSession should not run for the first prompt");
-      },
-      startFreshSession: async () => {
-        recorded.push("fresh");
-      },
-    });
-
-    expect(recorded).toEqual([GROK_REWIND_POINTS_METHOD, "fresh"]);
-  });
-
-  test("executes conversation-only rewind keeping prompts before the clicked message", async () => {
-    const recorded: Array<{ method: string; params: Record<string, unknown> }> = [];
-
-    await revertGrokConversation({
-      sessionId: "session-1",
-      cwd: "/workspace",
-      messageId: "msg-b",
-      userMessageIds: ["msg-a", "msg-b"],
-      loadSession: async () => {
-        throw new Error("loadSession should not run when execute succeeds");
-      },
-      startFreshSession: async () => {
-        throw new Error("startFreshSession should not run for a later prompt");
-      },
+      mode: "conversation",
       extMethod: async (method, params) => {
         recorded.push({ method, params });
         if (method === GROK_REWIND_POINTS_METHOD) {
           return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
         }
-        if (params.targetPromptIndex === 0) {
-          return {
-            success: false,
-            error: null,
-            target_prompt_index: 0,
-            mode: "conversation_only",
-            reverted_files: [],
-            clean_files: [],
-            conflicts: [],
-            prompt_text: null,
-          };
+        return { success: true };
+      },
+    });
+
+    expect(recorded).toEqual([
+      {
+        method: GROK_REWIND_POINTS_METHOD,
+        params: { sessionId: "session-1" },
+      },
+      {
+        method: GROK_REWIND_EXECUTE_METHOD,
+        params: {
+          sessionId: "session-1",
+          targetPromptIndex: 0,
+          force: true,
+          mode: "conversation_only",
+        },
+      },
+    ]);
+  });
+
+  test("commits conversation rewind with force", async () => {
+    const recorded: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+    await revertGrok({
+      sessionId: "session-1",
+      cwd: "/workspace",
+      messageId: "msg-b",
+      userMessageIds: ["msg-a", "msg-b"],
+      mode: "conversation",
+      extMethod: async (method, params) => {
+        recorded.push({ method, params });
+        if (method === GROK_REWIND_POINTS_METHOD) {
+          return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
         }
         return { success: true };
       },
@@ -202,25 +142,75 @@ describe("revertGrokConversation", () => {
         params: {
           sessionId: "session-1",
           targetPromptIndex: 1,
+          force: true,
           mode: "conversation_only",
         },
       },
     ]);
   });
 
+  test("maps file rewind onto files_only", async () => {
+    const recorded: Array<{ method: string; params: Record<string, unknown> }> = [];
+    await revertGrok({
+      sessionId: "session-1",
+      cwd: "/workspace",
+      messageId: "msg-b",
+      userMessageIds: ["msg-a", "msg-b"],
+      mode: "files",
+      extMethod: async (method, params) => {
+        recorded.push({ method, params });
+        if (method === GROK_REWIND_POINTS_METHOD) {
+          return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
+        }
+        return { success: true };
+      },
+    });
+    expect(recorded[1]).toEqual({
+      method: GROK_REWIND_EXECUTE_METHOD,
+      params: {
+        sessionId: "session-1",
+        targetPromptIndex: 1,
+        force: true,
+        mode: "files_only",
+      },
+    });
+  });
+
+  test("maps conversation-and-files rewind onto all", async () => {
+    const recorded: Array<{ method: string; params: Record<string, unknown> }> = [];
+    await revertGrok({
+      sessionId: "session-1",
+      cwd: "/workspace",
+      messageId: "msg-b",
+      userMessageIds: ["msg-a", "msg-b"],
+      mode: "both",
+      extMethod: async (method, params) => {
+        recorded.push({ method, params });
+        if (method === GROK_REWIND_POINTS_METHOD) {
+          return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
+        }
+        return { success: true };
+      },
+    });
+    expect(recorded[1]).toEqual({
+      method: GROK_REWIND_EXECUTE_METHOD,
+      params: {
+        sessionId: "session-1",
+        targetPromptIndex: 1,
+        force: true,
+        mode: "all",
+      },
+    });
+  });
+
   test("does not execute when the session is missing", async () => {
     await expect(
-      revertGrokConversation({
+      revertGrok({
         sessionId: "",
         cwd: "/workspace",
         messageId: "msg-a",
         userMessageIds: ["msg-a"],
-        loadSession: async () => {
-          throw new Error("loadSession should not run");
-        },
-        startFreshSession: async () => {
-          throw new Error("startFreshSession should not run");
-        },
+        mode: "conversation",
         extMethod: async () => {
           throw new Error("extMethod should not run");
         },
@@ -228,105 +218,47 @@ describe("revertGrokConversation", () => {
     ).rejects.toThrow("Grok session is not ready for rewind");
   });
 
-  test("does not claim success when the forked session is missing on disk", async () => {
-    const grokHome = mkdtempSync(join(tmpdir(), "paseo-grok-rewind-missing-"));
-    tempDirs.push(grokHome);
-    const loaded: string[] = [];
+  test("throws when execute returns a dry-run or failed result", async () => {
     await expect(
-      revertGrokConversation({
+      revertGrok({
         sessionId: "session-1",
         cwd: "/workspace",
         messageId: "msg-b",
         userMessageIds: ["msg-a", "msg-b"],
-        env: { GROK_HOME: grokHome },
-        loadSession: async (sessionId) => {
-          loaded.push(sessionId);
-        },
-        startFreshSession: async () => {
-          throw new Error("startFreshSession should not run");
-        },
+        mode: "conversation",
         extMethod: async (method) => {
           if (method === GROK_REWIND_POINTS_METHOD) {
-            return { rewind_points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
+            return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
           }
-          if (method === GROK_SESSION_FORK_METHOD) {
-            return { newSessionId: "session-fork" };
+          return { success: false, error: null, mode: "conversation_only" };
+        },
+      }),
+    ).rejects.toThrow("Grok rewind failed");
+  });
+
+  test("surfaces Grok's execute error", async () => {
+    await expect(
+      revertGrok({
+        sessionId: "session-1",
+        cwd: "/workspace",
+        messageId: "msg-b",
+        userMessageIds: ["msg-a", "msg-b"],
+        mode: "files",
+        extMethod: async (method) => {
+          if (method === GROK_REWIND_POINTS_METHOD) {
+            return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
           }
           return {
             success: false,
-            error: null,
-            mode: "conversation_only",
+            error: "Cannot rewind to prompt #1 — compaction checkpoint data is unavailable",
           };
         },
       }),
-    ).rejects.toThrow("Grok forked session session-fork is missing on disk");
-    expect(loaded).toEqual([]);
-  });
-
-  test("forks and truncates on-disk history when rewind execute cannot reach the session actor", async () => {
-    const grokHome = mkdtempSync(join(tmpdir(), "paseo-grok-rewind-fork-"));
-    tempDirs.push(grokHome);
-    const cwd = "/workspace";
-    writeGrokSessionFiles(grokHome, cwd, "session-fork");
-    const recorded: Array<{ method: string; params: Record<string, unknown> }> = [];
-    const loaded: string[] = [];
-
-    await revertGrokConversation({
-      sessionId: "session-1",
-      cwd,
-      messageId: "msg-b",
-      userMessageIds: ["msg-a", "msg-b"],
-      env: { GROK_HOME: grokHome },
-      loadSession: async (sessionId) => {
-        loaded.push(sessionId);
-      },
-      startFreshSession: async () => {
-        throw new Error("startFreshSession should not run");
-      },
-      extMethod: async (method, params) => {
-        recorded.push({ method, params });
-        if (method === GROK_REWIND_POINTS_METHOD) {
-          return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
-        }
-        if (method === GROK_SESSION_FORK_METHOD) {
-          return { newSessionId: "session-fork" };
-        }
-        return { success: false, error: null, mode: "conversation_only" };
-      },
-    });
-
-    expect(loaded).toEqual(["session-fork"]);
-    expect(recorded).toEqual([
-      { method: GROK_REWIND_POINTS_METHOD, params: { sessionId: "session-1" } },
-      {
-        method: GROK_REWIND_EXECUTE_METHOD,
-        params: { sessionId: "session-1", targetPromptIndex: 1, mode: "conversation_only" },
-      },
-      {
-        method: GROK_SESSION_FORK_METHOD,
-        params: {
-          sourceSessionId: "session-1",
-          sourceCwd: cwd,
-          newCwd: cwd,
-          newSessionId: expect.stringMatching(
-            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-          ),
-        },
-      },
-    ]);
-    const sessionDir = join(
-      grokHome,
-      "sessions",
-      encodeGrokSessionsCwdDirname(cwd),
-      "session-fork",
-    );
-    expect(readFileSync(join(sessionDir, "chat_history.jsonl"), "utf8")).toContain("one");
-    expect(readFileSync(join(sessionDir, "chat_history.jsonl"), "utf8")).not.toContain("two");
-    expect(readFileSync(join(sessionDir, "updates.jsonl"), "utf8")).not.toContain("two");
+    ).rejects.toThrow("Cannot rewind to prompt #1 — compaction checkpoint data is unavailable");
   });
 });
 
-describe("ACPAgentSession Grok conversation rewind", () => {
+describe("ACPAgentSession Grok rewind", () => {
   test("executes Grok conversation rewind and refills streamHistory with remaining turns", async () => {
     const extMethod = vi.fn(async (method: string) => {
       if (method === GROK_REWIND_POINTS_METHOD) {
@@ -334,12 +266,14 @@ describe("ACPAgentSession Grok conversation rewind", () => {
       }
       return { success: true };
     });
-    const newSession = vi.fn(async () => ({ sessionId: "session-2" }));
-    const loadSession = vi.fn(async () => ({ sessionId: "session-loaded" }));
     const session = createGrokRewindSession();
     const internals = asInternals<RewindSessionInternals>(session);
     internals.sessionId = "session-1";
-    internals.connection = { extMethod, loadSession, newSession };
+    internals.connection = {
+      extMethod,
+      loadSession: async () => ({}),
+      newSession: async () => ({ sessionId: "session-2" }),
+    };
 
     internals.pushEvent(timelineEvent(userMessage("first", "msg-a")));
     internals.pushEvent(timelineEvent(assistantMessage("ok", "asst-1")));
@@ -356,168 +290,122 @@ describe("ACPAgentSession Grok conversation rewind", () => {
     expect(extMethod).toHaveBeenNthCalledWith(2, GROK_REWIND_EXECUTE_METHOD, {
       sessionId: "session-1",
       targetPromptIndex: 1,
+      force: true,
       mode: "conversation_only",
     });
-    expect(newSession).not.toHaveBeenCalled();
-    expect(loadSession).not.toHaveBeenCalled();
+    expect(internals.sessionId).toBe("session-1");
     expect(await collectHistory(session)).toEqual([
       timelineEvent(userMessage("first", "msg-a")),
       timelineEvent(assistantMessage("ok", "asst-1")),
     ]);
   });
 
-  test("switches to a fork without duplicating replayed history when resumed rewind fails", async () => {
-    const grokHome = mkdtempSync(join(tmpdir(), "paseo-grok-rewind-acp-"));
-    const previousGrokHome = process.env.GROK_HOME;
-    process.env.GROK_HOME = grokHome;
-    writeGrokSessionFiles(grokHome, "/tmp/grok-rewind", "session-fork");
-    const extMethod = vi.fn(async (method: string) => {
-      if (method === GROK_REWIND_POINTS_METHOD) {
-        return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
-      }
-      if (method === GROK_SESSION_FORK_METHOD) {
-        return { newSessionId: "session-fork" };
-      }
-      return { success: false, error: null, mode: "conversation_only" };
-    });
-    let session!: ACPAgentSession;
-    const loadSession = vi.fn(async (params: { sessionId: string }) => {
-      await session.sessionUpdate({
-        sessionId: params.sessionId,
-        update: {
-          sessionUpdate: "user_message_chunk",
-          content: { type: "text", text: "replayed but suppressed" },
-        },
-      });
-      return {};
-    });
-    const newSession = vi.fn(async () => ({ sessionId: "session-fresh" }));
-    session = createGrokRewindSession();
-    const internals = asInternals<RewindSessionInternals>(session);
-    internals.sessionId = "session-1";
-    internals.connection = { extMethod, loadSession, newSession };
-
-    internals.pushEvent(timelineEvent(userMessage("first", "msg-a")));
-    internals.pushEvent(timelineEvent(assistantMessage("ok", "asst-1")));
-    internals.pushEvent(timelineEvent(userMessage("second", "msg-b")));
-    internals.pushEvent(timelineEvent(assistantMessage("later", "asst-2")));
-
-    try {
-      await session.revertConversation?.({ messageId: "msg-b" });
-
-      expect(loadSession).toHaveBeenCalledWith({
-        sessionId: "session-fork",
-        cwd: "/tmp/grok-rewind",
-        mcpServers: [],
-      });
-      expect(internals.sessionId).toBe("session-fork");
-      expect(await collectHistory(session)).toEqual([
-        timelineEvent(userMessage("first", "msg-a")),
-        timelineEvent(assistantMessage("ok", "asst-1")),
-      ]);
-    } finally {
-      if (previousGrokHome === undefined) {
-        delete process.env.GROK_HOME;
-      } else {
-        process.env.GROK_HOME = previousGrokHome;
-      }
-      rmSync(grokHome, { recursive: true, force: true });
-    }
-  });
-
-  test("opens a new Grok session when rewinding the first prompt", async () => {
+  test("keeps the same session when rewinding the first prompt", async () => {
     const extMethod = vi.fn(async (method: string) => {
       if (method === GROK_REWIND_POINTS_METHOD) {
         return { rewind_points: [{ prompt_index: 0 }] };
       }
-      throw new Error("execute should not run for the first prompt");
+      return { success: true };
     });
     const newSession = vi.fn(async () => ({ sessionId: "session-fresh" }));
-    const loadSession = vi.fn(async () => ({ sessionId: "session-loaded" }));
     const session = createGrokRewindSession();
     const internals = asInternals<RewindSessionInternals>(session);
     internals.sessionId = "session-1";
-    internals.connection = { extMethod, loadSession, newSession };
+    internals.connection = {
+      extMethod,
+      loadSession: async () => ({}),
+      newSession,
+    };
 
     internals.pushEvent(timelineEvent(userMessage("first", "msg-a")));
     internals.pushEvent(timelineEvent(assistantMessage("ok", "asst-1")));
 
     await session.revertConversation?.({ messageId: "msg-a" });
 
-    expect(newSession).toHaveBeenCalledWith({
-      cwd: "/tmp/grok-rewind",
-      mcpServers: [],
+    expect(newSession).not.toHaveBeenCalled();
+    expect(extMethod).toHaveBeenCalledWith(GROK_REWIND_EXECUTE_METHOD, {
+      sessionId: "session-1",
+      targetPromptIndex: 0,
+      force: true,
+      mode: "conversation_only",
     });
-    expect(extMethod).toHaveBeenCalledWith(GROK_REWIND_POINTS_METHOD, { sessionId: "session-1" });
-    expect(extMethod.mock.calls.some(([method]) => method === GROK_REWIND_EXECUTE_METHOD)).toBe(
-      false,
-    );
-    expect(internals.sessionId).toBe("session-fresh");
+    expect(internals.sessionId).toBe("session-1");
     expect(await collectHistory(session)).toEqual([]);
   });
+
+  test("restores files without dropping conversation history", async () => {
+    const extMethod = vi.fn(async (method: string) => {
+      if (method === GROK_REWIND_POINTS_METHOD) {
+        return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
+      }
+      return { success: true };
+    });
+    const session = createGrokRewindSession();
+    const internals = asInternals<RewindSessionInternals>(session);
+    internals.sessionId = "session-1";
+    internals.connection = {
+      extMethod,
+      loadSession: async () => ({}),
+      newSession: async () => ({ sessionId: "session-2" }),
+    };
+
+    internals.pushEvent(timelineEvent(userMessage("first", "msg-a")));
+    internals.pushEvent(timelineEvent(assistantMessage("ok", "asst-1")));
+    internals.pushEvent(timelineEvent(userMessage("second", "msg-b")));
+    internals.pushEvent(timelineEvent(assistantMessage("later", "asst-2")));
+
+    await session.revertFiles?.({ messageId: "msg-b" });
+
+    expect(extMethod).toHaveBeenNthCalledWith(2, GROK_REWIND_EXECUTE_METHOD, {
+      sessionId: "session-1",
+      targetPromptIndex: 1,
+      force: true,
+      mode: "files_only",
+    });
+    expect(internals.rewindTimeline).toEqual([
+      userMessage("first", "msg-a"),
+      assistantMessage("ok", "asst-1"),
+      userMessage("second", "msg-b"),
+      assistantMessage("later", "asst-2"),
+    ]);
+    expect(await collectHistory(session)).toEqual([]);
+  });
+
+  test("rewinds conversation and files together", async () => {
+    const extMethod = vi.fn(async (method: string) => {
+      if (method === GROK_REWIND_POINTS_METHOD) {
+        return { points: [{ prompt_index: 0 }, { prompt_index: 1 }] };
+      }
+      return { success: true };
+    });
+    const session = createGrokRewindSession();
+    const internals = asInternals<RewindSessionInternals>(session);
+    internals.sessionId = "session-1";
+    internals.connection = {
+      extMethod,
+      loadSession: async () => ({}),
+      newSession: async () => ({ sessionId: "session-2" }),
+    };
+
+    internals.pushEvent(timelineEvent(userMessage("first", "msg-a")));
+    internals.pushEvent(timelineEvent(assistantMessage("ok", "asst-1")));
+    internals.pushEvent(timelineEvent(userMessage("second", "msg-b")));
+    internals.pushEvent(timelineEvent(assistantMessage("later", "asst-2")));
+
+    await session.revertBoth?.({ messageId: "msg-b" });
+
+    expect(extMethod).toHaveBeenNthCalledWith(2, GROK_REWIND_EXECUTE_METHOD, {
+      sessionId: "session-1",
+      targetPromptIndex: 1,
+      force: true,
+      mode: "all",
+    });
+    expect(await collectHistory(session)).toEqual([
+      timelineEvent(userMessage("first", "msg-a")),
+      timelineEvent(assistantMessage("ok", "asst-1")),
+    ]);
+  });
 });
-
-function updateLine(promptIndex: number, text: string): string {
-  return JSON.stringify({
-    method: "session/update",
-    params: {
-      update: {
-        sessionUpdate: "user_message_chunk",
-        content: { type: "text", text },
-        _meta: { promptIndex },
-      },
-    },
-  });
-}
-
-function thoughtLine(text: string): string {
-  return JSON.stringify({
-    method: "session/update",
-    params: {
-      update: {
-        sessionUpdate: "agent_thought_chunk",
-        content: { type: "text", text },
-      },
-    },
-  });
-}
-
-function assistantLine(text: string): string {
-  return JSON.stringify({
-    method: "session/update",
-    params: {
-      update: {
-        sessionUpdate: "agent_message_chunk",
-        content: { type: "text", text },
-      },
-    },
-  });
-}
-
-function writeGrokSessionFiles(grokHome: string, cwd: string, sessionId: string): void {
-  const sessionDir = join(grokHome, "sessions", encodeGrokSessionsCwdDirname(cwd), sessionId);
-  mkdirSync(sessionDir, { recursive: true });
-  writeFileSync(
-    join(sessionDir, "updates.jsonl"),
-    [updateLine(0, "one"), assistantLine("one"), updateLine(1, "two"), assistantLine("two")].join(
-      "\n",
-    ) + "\n",
-  );
-  writeFileSync(
-    join(sessionDir, "chat_history.jsonl"),
-    [
-      JSON.stringify({ type: "system", content: "sys" }),
-      JSON.stringify({ type: "user", prompt_index: 0, content: "one" }),
-      JSON.stringify({ type: "assistant", content: "one" }),
-      JSON.stringify({ type: "user", prompt_index: 1, content: "two" }),
-      JSON.stringify({ type: "assistant", content: "two" }),
-    ].join("\n") + "\n",
-  );
-  writeFileSync(
-    join(sessionDir, "rewind_points.jsonl"),
-    `${JSON.stringify({ prompt_index: 0 })}\n${JSON.stringify({ prompt_index: 1 })}\n`,
-  );
-}
 
 function createGrokRewindSession(): ACPAgentSession {
   return new ACPAgentSession(
@@ -538,10 +426,10 @@ function createGrokRewindSession(): ACPAgentSession {
         supportsReasoningStream: true,
         supportsToolInvocations: true,
         supportsRewindConversation: true,
-        supportsRewindFiles: false,
-        supportsRewindBoth: false,
+        supportsRewindFiles: true,
+        supportsRewindBoth: true,
       },
-      conversationRewinder: revertGrokConversation,
+      conversationRewinder: revertGrok,
     },
   );
 }
