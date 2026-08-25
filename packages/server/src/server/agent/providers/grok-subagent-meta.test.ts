@@ -8,6 +8,7 @@ import {
   encodeGrokSessionsCwdDirname,
   readGrokSubagentDiskMeta,
   resolveGrokHome,
+  resolveGrokSessionDirectory,
 } from "./grok-subagent-meta.js";
 
 const CANONICAL = {
@@ -82,6 +83,24 @@ describe("grok-subagent-meta", () => {
       model: "grok-code",
       thinkingOptionId: "low",
     });
+  });
+
+  test("resolves a session directory from the cwd-encoded path", () => {
+    const grokHome = mkdtempSync(join(tmpdir(), "paseo-grok-session-dir-"));
+    tempDirs.push(grokHome);
+    const cwd = "/workspace/project";
+    const sessionId = "session-1";
+    const sessionDir = join(grokHome, "sessions", encodeGrokSessionsCwdDirname(cwd), sessionId);
+    mkdirSync(sessionDir, { recursive: true });
+    writeFileSync(join(sessionDir, "updates.jsonl"), "{}\n");
+
+    expect(
+      resolveGrokSessionDirectory({
+        sessionId,
+        cwd,
+        env: { GROK_HOME: grokHome },
+      }),
+    ).toBe(sessionDir);
   });
 
   test("returns null when summary is missing or unreadable", () => {

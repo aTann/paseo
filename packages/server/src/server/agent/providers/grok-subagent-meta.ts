@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -28,6 +28,45 @@ export function resolveGrokHome(env: Record<string, string | undefined> = proces
 /** Match Grok's short-path `encode_cwd_dirname` (urlencoding of the cwd). */
 export function encodeGrokSessionsCwdDirname(cwd: string): string {
   return encodeURIComponent(cwd);
+}
+
+function grokSessionDirectoryLooksPopulated(directory: string): boolean {
+  return (
+    existsSync(join(directory, "updates.jsonl")) ||
+    existsSync(join(directory, "chat_history.jsonl")) ||
+    existsSync(join(directory, "summary.json"))
+  );
+}
+
+/**
+ * Locate a Grok session directory under `~/.grok/sessions`.
+ * Prefer the cwd-encoded path; fall back to a shallow walk for hashed encodings.
+ */
+export function resolveGrokSessionDirectory(input: {
+  sessionId: string;
+  cwd?: string | null;
+  env?: Record<string, string | undefined>;
+}): string | null {
+  const sessionId = input.sessionId.trim();
+  if (!sessionId) return null;
+
+  const sessionsRoot = join(resolveGrokHome(input.env ?? process.env), "sessions");
+  const cwd = typeof input.cwd === "string" ? input.cwd.trim() : "";
+  if (cwd) {
+    const direct = join(sessionsRoot, encodeGrokSessionsCwdDirname(cwd), sessionId);
+    if (grokSessionDirectoryLooksPopulated(direct)) return direct;
+  }
+
+  try {
+    for (const epoch of readdirSync(sessionsRoot, { withFileTypes: true })) {
+      if (!epoch.isDirectory()) continue;
+      const candidate = join(sessionsRoot, epoch.name, sessionId);
+      if (grokSessionDirectoryLooksPopulated(candidate)) return candidate;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function normalizeReasoningEffort(

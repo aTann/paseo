@@ -18,6 +18,7 @@ import {
 import {
   ACPAgentClient,
   ACPAgentSession,
+  type ACPConversationRewinder,
   type ACPExtensionNotificationParser,
   type SpawnedACPProcess,
   type SessionStateResponse,
@@ -3664,6 +3665,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
    */
   function makeTestSession(args: {
     capabilities?: AgentCapabilityFlags;
+    conversationRewinder?: ACPConversationRewinder;
     handle: AgentPersistenceHandle;
     loadSession?: ReturnType<typeof vi.fn>;
     unstableResumeSession?: ReturnType<typeof vi.fn>;
@@ -3716,6 +3718,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
           supportsToolInvocations: true,
           ...args.capabilities,
         },
+        conversationRewinder: args.conversationRewinder,
         handle: args.handle,
       },
     );
@@ -3841,6 +3844,87 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
         },
       },
     ]);
+  });
+
+  test("assigns rewind identities to ID-less user messages during loadSession replay", async () => {
+    let session!: ACPAgentSession;
+    let rewindCall: { messageId: string; userMessageIds: string[] } | undefined;
+    const conversationRewinder = vi.fn<ACPConversationRewinder>(async (input) => {
+      rewindCall = {
+        messageId: input.messageId,
+        userMessageIds: [...input.userMessageIds],
+      };
+    });
+    const loadSession = async () => {
+      for (const content of [
+        { type: "text", text: "first" },
+        { type: "image", data: "AA==", mimeType: "image/png" },
+      ] as const) {
+        await session.sessionUpdate({
+          sessionId: "session-1",
+          update: { sessionUpdate: "user_message_chunk", content } as SessionUpdate,
+        });
+      }
+      await session.sessionUpdate({
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "First answer" },
+        } as SessionUpdate,
+      });
+      await session.sessionUpdate({
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "second" },
+        } as SessionUpdate,
+      });
+      await session.sessionUpdate({
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "Second answer" },
+        } as SessionUpdate,
+      });
+      return {
+        sessionId: "session-1",
+        modes: null,
+        models: null,
+        configOptions: [],
+      };
+    };
+    ({ session } = makeTestSession({
+      capabilities: { loadSession: true },
+      conversationRewinder,
+      handle: { sessionId: "session-1", provider: "test-acp" },
+      loadSession,
+    }));
+
+    await session.initializeResumedSession();
+
+    const userMessages: Array<{ text: string; messageId?: string }> = [];
+    for await (const event of session.streamHistory()) {
+      if (event.type === "timeline" && event.item.type === "user_message") {
+        userMessages.push(event.item);
+      }
+    }
+    expect(userMessages).toHaveLength(2);
+    expect(userMessages[0]).toMatchObject({
+      text: "first[image]",
+      messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+    expect(userMessages[1]).toMatchObject({
+      text: "second",
+      messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+    expect(userMessages[1]?.messageId).not.toBe(userMessages[0]?.messageId);
+
+    await session.revertConversation?.({ messageId: userMessages[1]!.messageId! });
+
+    expect(rewindCall).toEqual({
+      messageId: userMessages[1]?.messageId,
+      userMessageIds: [userMessages[0]?.messageId, userMessages[1]?.messageId],
+    });
   });
 
   test("assigns stable fallback IDs to ID-less assistant messages during loadSession replay", async () => {
