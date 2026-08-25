@@ -594,6 +594,7 @@ export const ptBR: TranslationResources = {
       },
       actions: {
         newTab: "Nova aba",
+        moreTabs: "Mais abas",
         newAgent: "Novo agente",
         newTerminal: "Novo terminal",
         preparingTerminal: "Preparando aba de terminal",

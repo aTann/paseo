@@ -588,6 +588,7 @@ export const en = {
       },
       actions: {
         newTab: "New tab",
+        moreTabs: "More tabs",
         newAgent: "New agent",
         newTerminal: "New terminal",
         preparingTerminal: "Preparing terminal tab",

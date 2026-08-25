@@ -82,6 +82,9 @@ function SortableItem<T>({
       transition,
       opacity: computeDragOpacity(Boolean(externalDndContext), isDragging),
       zIndex: isDragging ? 1000 : 1,
+      // Web flex items shrink by default. A tab strip that shrinks never overflows its
+      // ScrollView, so the chips get clipped with no way to reach the ones on the right.
+      flexShrink: 0,
     }),
     [combinedTransform, transition, externalDndContext, isDragging],
   );

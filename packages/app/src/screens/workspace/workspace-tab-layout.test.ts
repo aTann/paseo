@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   computeWorkspaceTabLayout,
+  computeWorkspaceTabRange,
+  computeWorkspaceTabScrollOffset,
   retainWorkspaceTabMeasuredWidth,
 } from "@/screens/workspace/workspace-tab-layout";
 
 const metrics = {
   rowHorizontalInset: 0,
   actionsReservedWidth: 120,
+  overflowControlWidth: 0,
   rowPaddingHorizontal: 8,
   tabGap: 4,
   minTabWidth: 96,
@@ -119,6 +122,89 @@ describe("computeWorkspaceTabLayout", () => {
     });
 
     expect(result.items.map((item) => item.width)).toEqual([102, 138]);
+  });
+
+  it("does not let the overflow control create overflow that was not already required", () => {
+    const result = computeWorkspaceTabLayout({
+      viewportWidth: 532,
+      tabLabelWidths: [98, 98, 98, 98],
+      metrics: {
+        ...metrics,
+        overflowControlWidth: 36,
+      },
+    });
+
+    expect(result.requiresHorizontalScrollFallback).toBe(false);
+    expect(result.items.map((item) => item.width)).toEqual([96, 96, 96, 96]);
+  });
+
+  it("reserves the overflow control after tabs already require horizontal scroll", () => {
+    const withoutOverflowControl = computeWorkspaceTabLayout({
+      viewportWidth: 400,
+      tabLabelWidths: [98, 98, 98, 98],
+      metrics,
+    });
+    const withOverflowControl = computeWorkspaceTabLayout({
+      viewportWidth: 400,
+      tabLabelWidths: [98, 98, 98, 98],
+      metrics: {
+        ...metrics,
+        overflowControlWidth: 36,
+      },
+    });
+
+    expect(withoutOverflowControl.requiresHorizontalScrollFallback).toBe(true);
+    expect(withOverflowControl.requiresHorizontalScrollFallback).toBe(true);
+    expect(withOverflowControl.items.map((item) => item.width)).toEqual([96, 96, 96, 96]);
+  });
+});
+
+describe("computeWorkspaceTabRange", () => {
+  it("places each chip after the previous chip plus the row gap", () => {
+    expect(
+      computeWorkspaceTabRange({
+        index: 2,
+        tabWidths: [96, 110, 96],
+        tabGap: 4,
+        rowPaddingHorizontal: 4,
+        slotStartInset: 2,
+      }),
+    ).toEqual({ start: 220, end: 316 });
+  });
+});
+
+describe("computeWorkspaceTabScrollOffset", () => {
+  it("keeps the current offset when the tab is already fully visible", () => {
+    expect(
+      computeWorkspaceTabScrollOffset({
+        tabRange: { start: 80, end: 176 },
+        viewportWidth: 240,
+        currentOffset: 40,
+        edgePadding: 24,
+      }),
+    ).toBe(40);
+  });
+
+  it("scrolls left to reveal a tab that is clipped on the leading edge", () => {
+    expect(
+      computeWorkspaceTabScrollOffset({
+        tabRange: { start: 20, end: 116 },
+        viewportWidth: 240,
+        currentOffset: 80,
+        edgePadding: 24,
+      }),
+    ).toBe(0);
+  });
+
+  it("scrolls right to reveal a tab that is clipped on the trailing edge", () => {
+    expect(
+      computeWorkspaceTabScrollOffset({
+        tabRange: { start: 320, end: 416 },
+        viewportWidth: 240,
+        currentOffset: 0,
+        edgePadding: 24,
+      }),
+    ).toBe(200);
   });
 });
 

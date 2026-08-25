@@ -21,6 +21,7 @@ import {
   CopyX,
   ArrowLeftToLine,
   ArrowRightToLine,
+  ChevronDown,
   Copy,
   Pencil,
   RotateCw,
@@ -51,7 +52,12 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { DropdownMenu, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
@@ -59,7 +65,11 @@ import { WORKSPACE_SECONDARY_HEADER_HEIGHT, useIsCompactFormFactor } from "@/con
 import { buttonControlHeight } from "@/components/ui/control-geometry";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { useWorkspaceTabLayout } from "@/screens/workspace/use-workspace-tab-layout";
-import { retainWorkspaceTabMeasuredWidth } from "@/screens/workspace/workspace-tab-layout";
+import {
+  computeWorkspaceTabRange,
+  computeWorkspaceTabScrollOffset,
+  retainWorkspaceTabMeasuredWidth,
+} from "@/screens/workspace/workspace-tab-layout";
 import {
   WorkspaceTabPresentationResolver,
   WorkspaceTabIcon,
@@ -107,6 +117,34 @@ const TAB_SCROLL_EDGE_EPSILON = 1;
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const ThemedX = withUnistyles(X);
 const ThemedCopy = withUnistyles(Copy);
+const ThemedChevronDown = withUnistyles(ChevronDown);
+
+function getHorizontalScrollElement(node: unknown): HTMLElement | null {
+  if (!isWeb) {
+    return null;
+  }
+  if (node instanceof HTMLElement) {
+    return node;
+  }
+  if (
+    node === null ||
+    typeof node !== "object" ||
+    !("getScrollableNode" in node) ||
+    typeof node.getScrollableNode !== "function"
+  ) {
+    return null;
+  }
+  const scrollable = node.getScrollableNode();
+  return scrollable instanceof HTMLElement ? scrollable : null;
+}
+
+function applyTabStripWheel(event: WheelEvent, scrollElement: HTMLElement) {
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) {
+    return;
+  }
+  event.preventDefault();
+  scrollElement.scrollLeft += event.deltaY;
+}
 
 function WorkspaceTabScrollShadeSvg({ side, color }: { side: "left" | "right"; color: string }) {
   const gradientId = `workspace-tab-scroll-shade-${side}-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
@@ -263,6 +301,90 @@ function WorkspaceNewTabButton({
         />
       </DropdownMenu>
     </View>
+  );
+}
+
+function WorkspaceTabOverflowButton({
+  tabs,
+  onSelectTab,
+  onLayout,
+}: {
+  tabs: ResolvedWorkspaceDesktopTabRowItem[];
+  onSelectTab: (tab: ResolvedWorkspaceDesktopTabRowItem, index: number) => void;
+  onLayout: (event: LayoutChangeEvent) => void;
+}) {
+  const { t } = useTranslation();
+  const tooltipText = t("workspace.tabs.actions.moreTabs");
+
+  return (
+    <View style={styles.inlineAddButton} onLayout={onLayout}>
+      <DropdownMenu>
+        <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+          <TooltipTrigger asChild triggerRefProp="triggerRef">
+            <DropdownMenuTrigger
+              testID="workspace-tabs-overflow-button"
+              accessibilityRole="button"
+              accessibilityLabel={tooltipText}
+              style={inlineAddActionButtonStyle}
+            >
+              <ThemedChevronDown size={14} uniProps={extraMutedColorMapping} />
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="center" offset={8}>
+            <Text style={styles.newTabTooltipText}>{tooltipText}</Text>
+          </TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent
+          align="end"
+          width={DROPDOWN_WIDTH}
+          testID="workspace-tabs-overflow-menu"
+        >
+          {tabs.map((item, index) => (
+            <WorkspaceTabOverflowMenuItem
+              key={`${item.tab.key}:${item.tab.kind}`}
+              item={item}
+              index={index}
+              onSelectTab={onSelectTab}
+            />
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </View>
+  );
+}
+
+function WorkspaceTabOverflowMenuItem({
+  item,
+  index,
+  onSelectTab,
+}: {
+  item: ResolvedWorkspaceDesktopTabRowItem;
+  index: number;
+  onSelectTab: (tab: ResolvedWorkspaceDesktopTabRowItem, index: number) => void;
+}) {
+  const handleSelect = useCallback(() => {
+    onSelectTab(item, index);
+  }, [index, item, onSelectTab]);
+  const leading = useMemo(
+    () => (
+      <WorkspaceTabIcon
+        presentation={item.presentation}
+        active={item.isActive}
+        backdrop="surface0"
+      />
+    ),
+    [item.isActive, item.presentation],
+  );
+
+  return (
+    <DropdownMenuItem
+      testID={`workspace-tabs-overflow-item-${item.tab.tabId}`}
+      leading={leading}
+      selected={item.isActive}
+      onSelect={handleSelect}
+    >
+      {item.presentation.label}
+    </DropdownMenuItem>
   );
 }
 
@@ -980,8 +1102,10 @@ function ResolvedWorkspaceDesktopTabsRow({
   const newTabKeys = useShortcutKeys("workspace-tab-new");
   const [tabsContainerWidth, setTabsContainerWidth] = useState<number>(0);
   const [inlineAddButtonWidth, setInlineAddButtonWidth] = useState<number>(0);
+  const [overflowButtonWidth, setOverflowButtonWidth] = useState<number>(0);
   const [paneMaximizeButtonWidth, setPaneMaximizeButtonWidth] = useState<number>(0);
   const [exitFocusModeWidth, setExitFocusModeWidth] = useState<number>(0);
+  const tabScrollRef = useRef<Animated.ScrollView>(null);
   const tabScrollOffset = useSharedValue(0);
   const tabScrollViewportWidth = useSharedValue(0);
   const tabScrollContentWidth = useSharedValue(0);
@@ -996,6 +1120,10 @@ function ResolvedWorkspaceDesktopTabsRow({
 
   const handleInlineAddButtonLayout = useCallback((event: LayoutChangeEvent) => {
     updateMeasuredWidth(setInlineAddButtonWidth, event);
+  }, []);
+
+  const handleOverflowButtonLayout = useCallback((event: LayoutChangeEvent) => {
+    updateMeasuredWidth(setOverflowButtonWidth, event);
   }, []);
 
   const handleExitFocusModeLayout = useCallback((event: LayoutChangeEvent) => {
@@ -1045,6 +1173,7 @@ function ResolvedWorkspaceDesktopTabsRow({
           (focusModeEnabled ? exitFocusModeWidth : 0) +
           resolvePaneMaximizeReservedWidth(showPaneMaximizeAction, paneMaximizeButtonWidth),
       ),
+      overflowControlWidth: overflowButtonWidth || DEFAULT_INLINE_ADD_BUTTON_RESERVED_WIDTH,
       rowPaddingHorizontal: TAB_ROW_PADDING_HORIZONTAL,
       tabGap: TAB_CHIP_GAP,
       minTabWidth: TAB_MIN_WIDTH,
@@ -1058,6 +1187,7 @@ function ResolvedWorkspaceDesktopTabsRow({
       exitFocusModeWidth,
       focusModeEnabled,
       inlineAddButtonWidth,
+      overflowButtonWidth,
       paneMaximizeButtonWidth,
       showPaneMaximizeAction,
     ],
@@ -1186,6 +1316,75 @@ function ResolvedWorkspaceDesktopTabsRow({
     viewportWidthOverride: tabsContainerWidth > 0 ? tabsContainerWidth : null,
     metrics: layoutMetrics,
   });
+
+  const scrollTabIntoView = useCallback(
+    (index: number) => {
+      if (!layout.requiresHorizontalScrollFallback) {
+        return;
+      }
+      const tabWidths = layout.items.map((item) => item.width);
+      if (index < 0 || index >= tabWidths.length) {
+        return;
+      }
+      const viewportWidth = tabScrollViewportWidth.value;
+      if (viewportWidth <= 0) {
+        return;
+      }
+      const nextOffset = computeWorkspaceTabScrollOffset({
+        tabRange: computeWorkspaceTabRange({
+          index,
+          tabWidths,
+          tabGap: TAB_CHIP_GAP,
+          rowPaddingHorizontal: TAB_ROW_PADDING_HORIZONTAL,
+          slotStartInset: TAB_CHIP_GAP / 2,
+        }),
+        viewportWidth,
+        currentOffset: tabScrollOffset.value,
+        edgePadding: TAB_SCROLL_SHADE_WIDTH,
+      });
+      if (Math.abs(nextOffset - tabScrollOffset.value) <= 1) {
+        return;
+      }
+      tabScrollRef.current?.scrollTo({ x: nextOffset, animated: true });
+    },
+    [
+      layout.items,
+      layout.requiresHorizontalScrollFallback,
+      tabScrollOffset,
+      tabScrollViewportWidth,
+    ],
+  );
+
+  const activeTabIndex = displayedTabs.findIndex((tab) => tab.isActive);
+  const activeTabKey = displayedTabs[activeTabIndex]?.tab.key ?? null;
+  useLayoutEffect(() => {
+    scrollTabIntoView(activeTabIndex);
+  }, [activeTabIndex, activeTabKey, scrollTabIntoView]);
+
+  useEffect(() => {
+    if (!isWeb || !layout.requiresHorizontalScrollFallback) {
+      return;
+    }
+    const scrollElement = getHorizontalScrollElement(tabScrollRef.current);
+    if (!scrollElement) {
+      return;
+    }
+    const handleWheel = (event: WheelEvent) => {
+      applyTabStripWheel(event, scrollElement);
+    };
+    scrollElement.addEventListener("wheel", handleWheel, { passive: false });
+    return () => {
+      scrollElement.removeEventListener("wheel", handleWheel);
+    };
+  }, [layout.requiresHorizontalScrollFallback, displayedTabs.length]);
+
+  const handleOverflowSelectTab = useCallback(
+    (tab: ResolvedWorkspaceDesktopTabRowItem, index: number) => {
+      onNavigateTab(tab.tab.tabId);
+      scrollTabIntoView(index);
+    },
+    [onNavigateTab, scrollTabIntoView],
+  );
 
   const handleDragEnd = useCallback(
     (nextTabs: ResolvedWorkspaceDesktopTabRowItem[]) => {
@@ -1338,6 +1537,7 @@ function ResolvedWorkspaceDesktopTabsRow({
       />
       <View style={styles.tabsScrollContainer}>
         <Animated.ScrollView
+          ref={tabScrollRef}
           horizontal
           scrollEnabled={layout.requiresHorizontalScrollFallback}
           testID="workspace-tabs-scroll"
@@ -1376,12 +1576,19 @@ function ResolvedWorkspaceDesktopTabsRow({
         />
       </View>
       {layout.requiresHorizontalScrollFallback ? (
-        <WorkspaceNewTabButton
-          serverId={normalizedServerId}
-          paneId={paneId}
-          shortcutKeys={newTabKeys}
-          onLayout={handleInlineAddButtonLayout}
-        />
+        <>
+          <WorkspaceTabOverflowButton
+            tabs={displayedTabs}
+            onSelectTab={handleOverflowSelectTab}
+            onLayout={handleOverflowButtonLayout}
+          />
+          <WorkspaceNewTabButton
+            serverId={normalizedServerId}
+            paneId={paneId}
+            shortcutKeys={newTabKeys}
+            onLayout={handleInlineAddButtonLayout}
+          />
+        </>
       ) : null}
       <WorkspacePaneMaximizeButton
         visible={showPaneMaximizeAction}
@@ -1520,6 +1727,7 @@ function ResolvedDesktopTabChip({
 
 const styles = StyleSheet.create((theme) => ({
   tabsContainer: {
+    width: "100%",
     minWidth: 0,
     height: WORKSPACE_SECONDARY_HEADER_HEIGHT,
     borderBottomWidth: 1,
@@ -1536,6 +1744,7 @@ const styles = StyleSheet.create((theme) => ({
     minWidth: 0,
     flex: 1,
     alignSelf: "stretch",
+    overflow: "hidden",
   },
   tabsScrollFitContent: {
     flex: 1,
@@ -1571,6 +1780,7 @@ const styles = StyleSheet.create((theme) => ({
   inlineAddButton: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 0,
     paddingHorizontal: theme.spacing[1],
   },
   paneMaximizeButtonSlot: {
@@ -1601,6 +1811,7 @@ const styles = StyleSheet.create((theme) => ({
   tabSlot: {
     position: "relative",
     overflow: "visible",
+    flexShrink: 0,
     marginHorizontal: TAB_CHIP_GAP / 2,
   },
   tabHandle: {

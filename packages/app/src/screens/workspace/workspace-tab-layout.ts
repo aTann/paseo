@@ -3,6 +3,7 @@ export type WorkspaceTabCloseButtonPolicy = "all";
 export interface WorkspaceTabLayoutMetrics {
   rowHorizontalInset: number;
   actionsReservedWidth: number;
+  overflowControlWidth: number;
   rowPaddingHorizontal: number;
   tabGap: number;
   minTabWidth: number;
@@ -30,6 +31,11 @@ export interface WorkspaceTabLayoutResult {
   requiresHorizontalScrollFallback: boolean;
 }
 
+export interface WorkspaceTabRange {
+  start: number;
+  end: number;
+}
+
 export function retainWorkspaceTabMeasuredWidth(
   currentWidth: number,
   measuredWidth: number,
@@ -50,8 +56,53 @@ function clamp(value: number, min: number, max: number): number {
   return value;
 }
 
-export function computeWorkspaceTabLayout(
+export function computeWorkspaceTabRange(input: {
+  index: number;
+  tabWidths: number[];
+  tabGap: number;
+  rowPaddingHorizontal: number;
+  slotStartInset: number;
+}): WorkspaceTabRange {
+  const width = input.tabWidths[input.index] ?? 0;
+  let start = input.rowPaddingHorizontal + input.slotStartInset;
+  for (let index = 0; index < input.index; index += 1) {
+    start += (input.tabWidths[index] ?? 0) + input.tabGap;
+  }
+  return { start, end: start + width };
+}
+
+export function computeWorkspaceTabScrollOffset(input: {
+  tabRange: WorkspaceTabRange;
+  viewportWidth: number;
+  currentOffset: number;
+  edgePadding: number;
+}): number {
+  if (input.viewportWidth <= 0) {
+    return input.currentOffset;
+  }
+
+  const tabWidth = input.tabRange.end - input.tabRange.start;
+  if (tabWidth >= input.viewportWidth) {
+    return Math.max(0, input.tabRange.start);
+  }
+
+  const paddedStart = input.tabRange.start - input.edgePadding;
+  if (paddedStart < input.currentOffset) {
+    return Math.max(0, paddedStart);
+  }
+
+  const paddedEnd = input.tabRange.end + input.edgePadding;
+  const viewportEnd = input.currentOffset + input.viewportWidth;
+  if (paddedEnd > viewportEnd) {
+    return Math.max(0, paddedEnd - input.viewportWidth);
+  }
+
+  return input.currentOffset;
+}
+
+function computeWorkspaceTabLayoutPass(
   input: WorkspaceTabLayoutInput,
+  actionsReservedWidth: number,
 ): WorkspaceTabLayoutResult {
   const tabCount = input.tabLabelWidths.length;
   if (tabCount === 0) {
@@ -64,7 +115,7 @@ export function computeWorkspaceTabLayout(
 
   const availableWidth = Math.max(
     0,
-    input.viewportWidth - input.metrics.rowHorizontalInset * 2 - input.metrics.actionsReservedWidth,
+    input.viewportWidth - input.metrics.rowHorizontalInset * 2 - actionsReservedWidth,
   );
   const rowOverhead =
     input.metrics.rowPaddingHorizontal * 2 + Math.max(tabCount - 1, 0) * input.metrics.tabGap;
@@ -105,4 +156,18 @@ export function computeWorkspaceTabLayout(
     closeButtonPolicy: "all",
     requiresHorizontalScrollFallback,
   };
+}
+
+export function computeWorkspaceTabLayout(
+  input: WorkspaceTabLayoutInput,
+): WorkspaceTabLayoutResult {
+  const layout = computeWorkspaceTabLayoutPass(input, input.metrics.actionsReservedWidth);
+  if (!layout.requiresHorizontalScrollFallback || input.metrics.overflowControlWidth <= 0) {
+    return layout;
+  }
+
+  return computeWorkspaceTabLayoutPass(
+    input,
+    input.metrics.actionsReservedWidth + input.metrics.overflowControlWidth,
+  );
 }

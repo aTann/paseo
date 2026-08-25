@@ -595,6 +595,7 @@ export const fr: TranslationResources = {
       },
       actions: {
         newTab: "Nouvel onglet",
+        moreTabs: "Plus d'onglets",
         newAgent: "Nouvel agent",
         newTerminal: "Nouveau terminal",
         preparingTerminal: "Préparation de l'onglet du terminal",

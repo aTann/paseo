@@ -590,6 +590,7 @@ export const zhCN: TranslationResources = {
       },
       actions: {
         newTab: "新建标签页",
+        moreTabs: "更多标签",
         newAgent: "新建 Agent",
         newTerminal: "新建 Terminal",
         preparingTerminal: "正在准备 Terminal 标签",

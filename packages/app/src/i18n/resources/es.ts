@@ -595,6 +595,7 @@ export const es: TranslationResources = {
       },
       actions: {
         newTab: "Nueva pestaña",
+        moreTabs: "Más pestañas",
         newAgent: "Nuevo agente",
         newTerminal: "Nueva terminal",
         preparingTerminal: "Preparando la pestaña del terminal",

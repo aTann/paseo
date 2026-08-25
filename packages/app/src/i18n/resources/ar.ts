@@ -590,6 +590,7 @@ export const ar: TranslationResources = {
       },
       actions: {
         newTab: "علامة تبويب جديدة",
+        moreTabs: "المزيد من علامات التبويب",
         newAgent: "وكيل جديد",
         newTerminal: "محطة جديدة",
         preparingTerminal: "إعداد علامة التبويب المحطة الطرفية",

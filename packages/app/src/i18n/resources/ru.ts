@@ -595,6 +595,7 @@ export const ru: TranslationResources = {
       },
       actions: {
         newTab: "Новая вкладка",
+        moreTabs: "Другие вкладки",
         newAgent: "Новый агент",
         newTerminal: "Новый терминал",
         preparingTerminal: "Подготовка вкладки терминала",

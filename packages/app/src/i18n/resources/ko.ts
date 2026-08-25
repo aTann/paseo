@@ -592,6 +592,7 @@ export const ko: TranslationResources = {
       },
       actions: {
         newTab: "새 탭",
+        moreTabs: "탭 더보기",
         newAgent: "새 에이전트",
         newTerminal: "새 터미널",
         preparingTerminal: "터미널 탭 준비 중",

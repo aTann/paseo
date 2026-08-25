@@ -595,6 +595,7 @@ export const ja: TranslationResources = {
       },
       actions: {
         newTab: "新しいタブ",
+        moreTabs: "その他のタブ",
         newAgent: "新しいエージェント",
         newTerminal: "新しいターミナル",
         preparingTerminal: "ターミナルタブを準備中",
