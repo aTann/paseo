@@ -86,12 +86,13 @@ describe("Sidebar interaction surfaces", () => {
     expect(theme.colors.surfaceSidebarSelected).not.toBe(theme.colors.surfaceSidebarHover);
   });
 
-  it("lifts light selection onto the workspace surface", () => {
+  it("keeps Light selection distinct from the sidebar surface", () => {
     expect(lightTheme.colors.surfaceSidebarHover).toBe(lightTheme.colors.surface1);
-    expect(lightTheme.colors.surfaceSidebarSelected).toBe(lightTheme.colors.surface0);
+    expect(lightTheme.colors.surfaceSidebarSelected).toBe(lightTheme.colors.surface3);
+    expect(lightTheme.colors.surfaceSidebarSelected).not.toBe(lightTheme.colors.surfaceSidebar);
   });
 
-  it("lifts dark selection along the surface scale", () => {
+  it("derives Dark hover and selection from the first two raised surfaces", () => {
     expect(darkTheme.colors.surfaceSidebarHover).toBe(darkTheme.colors.surface1);
     expect(darkTheme.colors.surfaceSidebarSelected).toBe(darkTheme.colors.surface2);
   });

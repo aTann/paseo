@@ -254,8 +254,7 @@ export function buildLightSemanticColors(tint: LightThemeConfig) {
     surfaceDiffEmpty: tint.surfaceDiffEmpty,
     surfaceSidebar: tint.surfaceSidebar,
     surfaceSidebarHover: tint.surface1,
-    // Light sidebar is already surface2; selected has to lift or the active row vanishes.
-    surfaceSidebarSelected: tint.surface0,
+    surfaceSidebarSelected: tint.surface3,
     surfaceWorkspace: tint.surface0,
     interactionHighlight: "rgba(0, 0, 0, 0.06)",
 
