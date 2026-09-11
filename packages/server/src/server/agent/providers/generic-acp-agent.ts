@@ -86,6 +86,7 @@ interface GenericACPAgentClientOptions {
   toolDetailMapper?: ACPToolDetailMapper;
   capabilities?: Partial<AgentCapabilityFlags>;
   conversationRewinder?: ACPConversationRewinder;
+  now?: () => number;
 }
 
 export class GenericACPAgentClient extends ACPAgentClient {
@@ -132,6 +133,7 @@ export class GenericACPAgentClient extends ACPAgentClient {
       ...(options.conversationRewinder
         ? { conversationRewinder: options.conversationRewinder }
         : {}),
+      now: options.now,
     });
 
     this.command = options.command;
