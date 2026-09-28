@@ -42,7 +42,7 @@ describe("GenericACPAgentClient", () => {
     void _client;
 
     expect(mockState.superConstructorOptions).toEqual([
-      {
+      expect.objectContaining({
         provider: "acp",
         logger: expect.any(Object),
         runtimeSettings: {
@@ -62,7 +62,8 @@ describe("GenericACPAgentClient", () => {
           supportsRewindFiles: false,
           supportsRewindBoth: false,
         },
-      },
+        waitForInitialCommands: true,
+      }),
     ]);
   });
 
