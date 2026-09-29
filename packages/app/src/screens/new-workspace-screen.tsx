@@ -30,7 +30,6 @@ import type { ComboboxOption as ComboboxOptionType, ComboboxProps } from "@/comp
 import { ComboboxTrigger } from "@/components/ui/combobox-trigger";
 import { Shortcut } from "@/components/ui/shortcut";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { SidebarMenuToggle } from "@/components/headers/menu-header";
 import { ScreenHeader } from "@/components/headers/screen-header";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -2430,7 +2429,6 @@ export function NewWorkspaceScreen({
     <FileDropZone style={styles.container}>
       <ScreenHeader left={screenHeaderLeft} borderless />
       <View style={styles.content}>
-        <TitlebarDragRegion />
         <NewWorkspaceLayout
           isCompact={isCompact}
           title={t("newWorkspace.title")}

@@ -67,7 +67,10 @@ import {
   resolveActiveHostServerId,
   type HostProfile,
 } from "@/types/host-connection";
-import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
+import {
+  TitlebarDragRegion,
+  WINDOW_CHROME_DATASET,
+} from "@/components/desktop/titlebar-drag-region";
 import { WindowChromeRegion, WindowChromeSafeArea } from "@/utils/desktop-window";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { BackHeader } from "@/components/headers/back-header";
@@ -1044,7 +1047,7 @@ function SettingsSidebar({
     >
       {isDesktop ? (
         <View style={innerContainerStyle}>
-          <View style={sidebarStyles.sidebarDragArea}>
+          <View style={sidebarStyles.sidebarDragArea} dataSet={WINDOW_CHROME_DATASET}>
             <TitlebarDragRegion />
             <WindowChromeSafeArea placement="below" />
             <SidebarHeaderRow

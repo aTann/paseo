@@ -36,6 +36,7 @@ import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary"
 import { LeftSidebar } from "@/components/left-sidebar";
 import { WindowSidebarMenuToggle } from "@/components/headers/menu-header";
 import { DesktopWindowControls } from "@/components/desktop/window-controls";
+import { WINDOW_CHROME_DATASET } from "@/components/desktop/titlebar-drag-region";
 import { SidebarModelProvider } from "@/components/sidebar/sidebar-model";
 import { WorkspacePinShortcutHandler } from "@/components/workspace-pin-shortcut-handler";
 import { WorkspaceRenameHost } from "@/components/workspace-rename-host";
@@ -583,6 +584,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
               horizontalPadding={WINDOW_SIDEBAR_TOGGLE_HORIZONTAL_PADDING}
               pointerEvents="box-none"
               style={layoutStyles.windowSidebarToggle}
+              dataSet={WINDOW_CHROME_DATASET}
             >
               <WindowSidebarMenuToggle />
             </WindowChromeSafeArea>

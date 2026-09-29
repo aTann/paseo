@@ -51,22 +51,25 @@
       }
     </style>
     <style>
-      button,
-      a,
-      input,
-      textarea,
-      select,
-      [role="button"],
-      [role="link"],
-      [role="textbox"],
-      [role="combobox"],
-      [role="tab"],
-      [role="switch"],
-      [role="checkbox"],
-      [role="slider"],
-      [role="menuitem"],
-      [tabindex],
-      [contenteditable="true"] {
+      /* Electron does not clip -webkit-app-region to overflow. App-wide no-drag on
+         buttons lets scrolled content punch holes in the titlebar. Scope holes to
+         window chrome, whose drag overlay those controls sit on. */
+      [data-window-chrome] button,
+      [data-window-chrome] a,
+      [data-window-chrome] input,
+      [data-window-chrome] textarea,
+      [data-window-chrome] select,
+      [data-window-chrome] [role="button"],
+      [data-window-chrome] [role="link"],
+      [data-window-chrome] [role="textbox"],
+      [data-window-chrome] [role="combobox"],
+      [data-window-chrome] [role="tab"],
+      [data-window-chrome] [role="switch"],
+      [data-window-chrome] [role="checkbox"],
+      [data-window-chrome] [role="slider"],
+      [data-window-chrome] [role="menuitem"],
+      [data-window-chrome] [tabindex],
+      [data-window-chrome] [contenteditable="true"] {
         -webkit-app-region: no-drag !important;
       }
 

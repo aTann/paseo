@@ -28,7 +28,10 @@ import { FileExplorerPane } from "./file-explorer-pane";
 import { useKeyboardShiftStyle } from "@/keyboard/shift";
 import { shouldUseCompactExplorerKeyboardPadding } from "@/keyboard/shift";
 import { WindowChromeSafeArea } from "@/utils/desktop-window";
-import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
+import {
+  TitlebarDragRegion,
+  WINDOW_CHROME_DATASET,
+} from "@/components/desktop/titlebar-drag-region";
 import { RetainedPanel, RetainedPanelActivity } from "@/components/retained-panel";
 import { useMountedTabSet } from "@/screens/workspace/use-mounted-tab-set";
 import { usePullRequestPanelAvailability } from "@/panels/pull-request-availability";
@@ -365,7 +368,12 @@ function ExplorerSidebarContent({
   return (
     <View style={styles.sidebarContent} pointerEvents="auto">
       {/* Header with tabs and close button */}
-      <WindowChromeSafeArea placement="inline" style={styles.header} testID="explorer-header">
+      <WindowChromeSafeArea
+        placement="inline"
+        style={styles.header}
+        testID="explorer-header"
+        dataSet={WINDOW_CHROME_DATASET}
+      >
         <TitlebarDragRegion />
         <View style={styles.tabsContainer(isCompact)}>
           {isGit && (

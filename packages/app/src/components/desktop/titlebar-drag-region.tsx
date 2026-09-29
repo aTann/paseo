@@ -10,12 +10,16 @@ import { isNative } from "@/constants/platform";
  *   - titlebarpart.css:249-260 → top-edge resizer, no-drag, 4px
  *
  * VS Code's drag region is a static DOM element — no z-index, no pointer-events,
- * no state, no event listeners. Interactive elements get no-drag from their own
- * CSS (global backstop in index.html). The drag region never re-renders.
+ * no state, no event listeners. Interactive chrome controls get no-drag from
+ * `[data-window-chrome]` in index.html. Content controls stay unmarked: scrolled
+ * no-drag boxes are unclipped and would punch holes in the titlebar.
+ * The drag region never re-renders.
  *
  * The resizer is Windows/Linux only (titlebarpart.css:249 scopes to .windows/.linux).
  * On macOS, Electron handles edge resize natively.
  */
+
+export const WINDOW_CHROME_DATASET = { windowChrome: "true" } as const;
 
 export const titlebarDragSurfaceStyle: React.CSSProperties = {
   cursor: "default",
