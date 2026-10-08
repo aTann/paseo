@@ -102,6 +102,12 @@ describe("OpenCodeBridge", () => {
     const paseoHome = await mkdtemp(path.join(tmpdir(), "paseo-opencode-bridge-"));
     temporaryDirectories.push(paseoHome);
     const catalog = createCatalog();
+    const executedInputs: unknown[] = [];
+    const executeTool = catalog.executeTool;
+    catalog.executeTool = async (name, input, context) => {
+      executedInputs.push(input);
+      return await executeTool(name, input, context);
+    };
     const bridge = new OpenCodeBridge({ paseoHome, logger: createTestLogger() });
     await bridge.start();
     bridge.setManifestCatalog(catalog);
@@ -173,12 +179,30 @@ describe("OpenCodeBridge", () => {
           token: plugin.token,
         },
       );
+      const asked: unknown[] = [];
       await expect(
         hooks.tool.paseo_echo_context.execute(
           { value: "through bundled plugin" },
-          { sessionID: "ses_one" },
+          { sessionID: "ses_one", ask: async (request: unknown) => void asked.push(request) },
         ),
       ).resolves.toMatchObject({ output: "through bundled plugin" });
+      expect(asked).toEqual([
+        { permission: "paseo_echo_context", patterns: ["*"], always: ["*"], metadata: {} },
+      ]);
+
+      executedInputs.length = 0;
+      await expect(
+        hooks.tool.paseo_echo_context.execute(
+          { value: "rejected" },
+          {
+            sessionID: "ses_one",
+            ask: async () => {
+              throw new Error("The user rejected permission to use this specific tool call.");
+            },
+          },
+        ),
+      ).rejects.toThrow("rejected permission");
+      expect(executedInputs).toEqual([]);
 
       release();
       const pluginError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -272,6 +296,82 @@ describe("OpenCodeBridge", () => {
     } finally {
       release();
       releaseDisabled();
+      await bridge.close();
+    }
+  });
+
+  test("v2 plugin returns a tool image as OpenCode file content", async () => {
+    const paseoHome = await mkdtemp(path.join(tmpdir(), "paseo-opencode-v2-image-"));
+    temporaryDirectories.push(paseoHome);
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const screenshot = {
+      name: "browser_screenshot",
+      title: "Browser screenshot",
+      description: "Captures the page.",
+      inputSchema: {},
+      async handler() {
+        return {
+          content: [
+            { type: "text", text: "Captured browser screenshot." },
+            { type: "image", data: png, mimeType: "image/png" },
+          ],
+        };
+      },
+    };
+    const tools = new Map([[screenshot.name, screenshot]]);
+    const catalog: PaseoToolCatalog = {
+      tools,
+      getTool: (name) => tools.get(name),
+      executeTool: async (name, input, context) =>
+        await tools.get(name)!.handler(input, context ?? {}),
+    };
+    const bridge = new OpenCodeBridge({ paseoHome, logger: createTestLogger() });
+    bridge.setManifestCatalog(catalog);
+    await bridge.start();
+    const release = bridge.bindSession({ sessionId: "session", env: {}, tools: catalog });
+    try {
+      const env = await bridge.decorateV2ServerEnv({});
+      const plugin = z
+        .object({
+          plugins: z.array(
+            z.object({
+              package: z.string(),
+              options: z.object({ baseUrl: z.string(), token: z.string() }),
+            }),
+          ),
+        })
+        .parse(JSON.parse(env.OPENCODE_CONFIG_CONTENT)).plugins[0]!;
+      const pluginTools = new Map<string, V2TestTool>();
+      const module: {
+        default: { setup(context: V2TestPluginContext): Promise<() => Promise<void>> };
+      } = await import(pathToFileURL(path.join(fileURLToPath(plugin.package), "server.js")).href);
+      const dispose = await module.default.setup({
+        options: plugin.options,
+        tool: {
+          transform: async (transform) => {
+            transform({ add: (tool) => pluginTools.set(tool.name, tool) });
+            return { dispose: async () => undefined };
+          },
+        },
+        session: {
+          context: async () => [],
+          get: async () => ({ parentID: undefined }),
+          hook: async () => ({ dispose: async () => undefined }),
+        },
+      });
+      const result = await pluginTools
+        .get("paseo_browser_screenshot")!
+        .execute({}, { sessionID: "session" });
+      expect(result).toMatchObject({
+        content: [
+          { type: "text", text: "Captured browser screenshot." },
+          { type: "file", mime: "image/png", uri: `data:image/png;base64,${png}` },
+        ],
+      });
+      await dispose();
+    } finally {
+      release();
       await bridge.close();
     }
   });

@@ -44,7 +44,6 @@ interface GrokACPAgentClientOptions {
   env?: Record<string, string>;
   providerId?: string;
   label?: string;
-  providerParams?: unknown;
 }
 
 const GROK_INITIALIZE_META = {
@@ -710,7 +709,6 @@ export class GrokACPAgentClient extends GenericACPAgentClient {
       env: options.env,
       providerId: options.providerId,
       label: options.label,
-      providerParams: options.providerParams,
       initializeRequestMeta: GROK_INITIALIZE_META,
       initialCommandsParser: parseGrokInitialCommands,
       forwardChildSessionUpdates: true,
