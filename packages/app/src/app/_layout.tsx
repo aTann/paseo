@@ -35,7 +35,7 @@ import { ChangelogHost } from "@/changelog";
 import { AppDiagnosticHost } from "@/components/app-diagnostic-host";
 import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary";
 import { LeftSidebar } from "@/components/left-sidebar";
-import { WindowSidebarMenuToggle } from "@/components/headers/menu-header";
+import { WindowSidebarMenuToggle } from "@/components/headers/sidebar-menu-toggle";
 import { DesktopWindowControls } from "@/components/desktop/window-controls";
 import { WINDOW_CHROME_DATASET } from "@/components/desktop/titlebar-drag-region";
 import { SidebarModelProvider } from "@/components/sidebar/sidebar-model";
