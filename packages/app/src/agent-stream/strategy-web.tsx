@@ -63,6 +63,8 @@ const HISTORY_START_SLOT_HEIGHT_PX = 32;
 const CONTENT_PADDING_TOP_PX = 16;
 const UPWARD_INPUT_EVIDENCE_TIMEOUT_MS = 100;
 const VIRTUALIZER_SCROLL_MARGIN_PX = HISTORY_START_SLOT_HEIGHT_PX + CONTENT_PADDING_TOP_PX;
+const CONTENT_LINE_SCROLL_PX = 40;
+const CONTENT_PAGE_SCROLL_RATIO = 0.875;
 
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -128,28 +130,111 @@ function isEditableEventTarget(target: EventTarget | null): boolean {
 }
 
 function isUpwardViewportScrollKey(event: KeyboardEvent): boolean {
-  if (isEditableEventTarget(event.target)) {
-    return false;
+  return contentScrollKeyDirection(event) === "up" && !isEditableEventTarget(event.target);
+}
+
+function contentScrollKeyDirection(event: KeyboardEvent): "up" | "down" | null {
+  if (event.altKey || event.ctrlKey || event.metaKey) {
+    return null;
   }
-  return (
+  if (
     event.key === "ArrowUp" ||
     event.key === "PageUp" ||
     event.key === "Home" ||
     (event.key === " " && event.shiftKey)
+  ) {
+    return "up";
+  }
+  if (
+    event.key === "ArrowDown" ||
+    event.key === "PageDown" ||
+    event.key === "End" ||
+    (event.key === " " && !event.shiftKey)
+  ) {
+    return "down";
+  }
+  return null;
+}
+
+function nextContentScrollTop(
+  event: KeyboardEvent,
+  scrollContainer: Pick<HTMLElement, "scrollTop" | "clientHeight" | "scrollHeight">,
+): number | null {
+  const direction = contentScrollKeyDirection(event);
+  if (!direction) {
+    return null;
+  }
+  const maxScroll = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+  if (maxScroll <= 0) {
+    return null;
+  }
+  if (event.key === "Home") {
+    return 0;
+  }
+  if (event.key === "End") {
+    return maxScroll;
+  }
+  const distance =
+    event.key === "ArrowUp" || event.key === "ArrowDown"
+      ? CONTENT_LINE_SCROLL_PX
+      : Math.max(1, Math.floor(scrollContainer.clientHeight * CONTENT_PAGE_SCROLL_RATIO));
+  const delta = direction === "up" ? -distance : distance;
+  return Math.min(maxScroll, Math.max(0, scrollContainer.scrollTop + delta));
+}
+
+function isContentActivationTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  return Boolean(
+    target.closest(
+      "a, button, summary, [role='button'], [role='link'], [role='menuitem'], [role='tab']",
+    ),
   );
+}
+
+function shouldFocusContentScroller(target: EventTarget | null): boolean {
+  return !isEditableEventTarget(target) && !isContentActivationTarget(target);
 }
 
 function canNestedScrollerConsumeUpwardInput(
   target: EventTarget | null,
   scrollContainer: HTMLElement,
 ): boolean {
+  return nestedScrollerCanConsume(target, scrollContainer, "up");
+}
+
+function canNestedScrollerConsumeViewportKey(
+  event: KeyboardEvent,
+  scrollContainer: HTMLElement,
+): boolean {
+  const direction = contentScrollKeyDirection(event);
+  if (!direction) {
+    return false;
+  }
+  return nestedScrollerCanConsume(event.target, scrollContainer, direction);
+}
+
+function nestedScrollerCanConsume(
+  target: EventTarget | null,
+  scrollContainer: HTMLElement,
+  direction: "up" | "down",
+): boolean {
   let element = target instanceof Element ? target : null;
   while (element && element !== scrollContainer) {
     if (element instanceof HTMLElement) {
       const overflowY = window.getComputedStyle(element).overflowY;
       const canScroll = overflowY === "auto" || overflowY === "scroll";
-      if (canScroll && element.scrollHeight > element.clientHeight && element.scrollTop > 0) {
-        return true;
+      const hasOverflow = canScroll && element.scrollHeight > element.clientHeight;
+      if (hasOverflow) {
+        const atTop = element.scrollTop <= 0;
+        const atBottom = element.scrollHeight - element.clientHeight - element.scrollTop <= 1;
+        if (direction === "up" && !atTop) {
+          return true;
+        }
+        if (direction === "down" && !atBottom) {
+          return true;
+        }
       }
     }
     element = element.parentElement;
@@ -1024,16 +1109,41 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!isUpwardViewportScrollKey(event)) {
+      if (
+        event.defaultPrevented ||
+        isEditableEventTarget(event.target) ||
+        scrollContainer.style.overflowY !== "auto"
+      ) {
         return;
       }
-      if (canNestedScrollerConsumeUpwardInput(event.target, scrollContainer)) {
+      if (event.key === " " && isContentActivationTarget(event.target)) {
         return;
       }
-      markUpwardViewportInput();
+      if (canNestedScrollerConsumeViewportKey(event, scrollContainer)) {
+        return;
+      }
+      const nextScrollTop = nextContentScrollTop(event, scrollContainer);
+      if (nextScrollTop === null) {
+        return;
+      }
+      if (isUpwardViewportScrollKey(event)) {
+        markUpwardViewportInput();
+      }
+      event.preventDefault();
+      if (scrollContainer.scrollTop !== nextScrollTop) {
+        scrollContainer.scrollTop = nextScrollTop;
+      }
     };
     const handlePointerDown = (event: PointerEvent) => {
       clearMouseScrollGesture();
+      if (
+        event.button === 0 &&
+        event.isPrimary &&
+        (event.pointerType === "mouse" || event.pointerType === "pen") &&
+        shouldFocusContentScroller(event.target)
+      ) {
+        scrollContainer.focus({ preventScroll: true });
+      }
       if (
         event.pointerType !== "mouse" ||
         !event.isPrimary ||
@@ -1115,7 +1225,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     // layout correction. Scroll events reuse the last committed row geometry.
     scrollContainer.addEventListener("scroll", handleDomScroll, { passive: true, capture: true });
     scrollContainer.addEventListener("wheel", handleWheel, { passive: true });
-    scrollContainer.addEventListener("keydown", handleKeyDown, { passive: true });
+    scrollContainer.addEventListener("keydown", handleKeyDown);
     scrollContainer.addEventListener("pointerdown", handlePointerDown, { passive: true });
     window.addEventListener("pointermove", handlePointerMove, { passive: true });
     window.addEventListener("pointerup", handlePointerEnd, { passive: true });
@@ -1203,6 +1313,7 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       // The browser still anchors delayed image growth while following output.
       // Detached reading has one owner: reconcileReadingPosition.
       overflowAnchor: followOutput ? "auto" : "none",
+      outline: "none",
       scrollbarWidth: overlayScrollbarEnabled ? "none" : undefined,
     };
   }, [followOutput, isMobileBreakpoint, scrollEnabled]);
@@ -1301,6 +1412,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         data-testid="agent-chat-scroll"
         data-overlay-scrollbar={scrollEnabled && !isMobileBreakpoint ? "true" : undefined}
         id={`agent-chat-scroll-${shouldUseVirtualizer ? "web-dom-virtualized" : "web-dom-scroll"}`}
+        // Viewport keys scroll this element only while it is focused. The document itself does not scroll.
+        tabIndex={scrollEnabled ? 0 : undefined}
         style={scrollContainerStyle}
       >
         <div ref={handleContentRef} style={contentContainerStyle}>

@@ -1587,4 +1587,193 @@ describe("createWebStreamStrategy", () => {
     expect(container.querySelector('[data-testid="agent-chat-scroll"]')).toBe(scrollContainer);
     expect(scrollTo).toHaveBeenCalledWith({ top: 2200, behavior: "auto" });
   });
+
+  it("scrolls the transcript with PageUp, PageDown, Home, and End once the content is focused", () => {
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: false });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        strategy.render({
+          agentId: "agent",
+          segments: {
+            historyVirtualized: [],
+            historyMounted: [userMessage(1)],
+            liveHead: [],
+          },
+          boundary: {
+            hasVirtualizedHistory: false,
+            hasMountedHistory: true,
+            hasLiveHead: false,
+          },
+          renderers: createRenderers(vi.fn()),
+          listEmptyComponent: null,
+          viewportRef: React.createRef<StreamViewportHandle>(),
+          routeBottomAnchorRequest: null,
+          isAuthoritativeHistoryReady: true,
+          onNearBottomChange: vi.fn(),
+          onNearHistoryStart: vi.fn().mockReturnValue(true),
+          isLoadingOlderHistory: false,
+          hasOlderHistory: false,
+          olderHistoryProgressKey: null,
+          scrollEnabled: true,
+          listStyle: null,
+          baseListContentContainerStyle: null,
+          forwardListContentContainerStyle: null,
+          contentMaxWidth: DEFAULT_CONTENT_MAX_WIDTH,
+        }),
+      );
+    });
+
+    const scrollContainer = container.querySelector<HTMLElement>(
+      '[data-testid="agent-chat-scroll"]',
+    );
+    if (!scrollContainer) {
+      throw new Error("Expected agent chat scroll container");
+    }
+    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 2000 });
+    scrollContainer.scrollTop = 800;
+    const page = Math.floor(400 * 0.875);
+
+    const row = scrollContainer.querySelector("[data-history-row-id]");
+    if (!row) {
+      throw new Error("Expected a transcript row");
+    }
+    const pointerDown = new MouseEvent("pointerdown", {
+      bubbles: true,
+      button: 0,
+      buttons: 1,
+    });
+    Object.defineProperties(pointerDown, {
+      isPrimary: { value: true },
+      pointerId: { value: 1 },
+      pointerType: { value: "mouse" },
+    });
+    act(() => {
+      row.dispatchEvent(pointerDown);
+    });
+    expect(document.activeElement).toBe(scrollContainer);
+
+    const press = (key: string, shiftKey = false) => {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => {
+        scrollContainer.dispatchEvent(event);
+      });
+      return event;
+    };
+
+    expect(press("PageDown").defaultPrevented).toBe(true);
+    expect(scrollContainer.scrollTop).toBe(800 + page);
+    expect(press("PageUp").defaultPrevented).toBe(true);
+    expect(scrollContainer.scrollTop).toBe(800);
+    expect(press("End").defaultPrevented).toBe(true);
+    expect(scrollContainer.scrollTop).toBe(1600);
+    expect(press("Home").defaultPrevented).toBe(true);
+    expect(scrollContainer.scrollTop).toBe(0);
+    expect(press("ArrowDown").defaultPrevented).toBe(true);
+    expect(scrollContainer.scrollTop).toBe(40);
+    expect(press(" ", true).defaultPrevented).toBe(true);
+    expect(scrollContainer.scrollTop).toBe(0);
+  });
+
+  it("leaves text fields, buttons, and nested scrollers to handle their own keys", () => {
+    const strategy = createWebStreamStrategy({ isMobileBreakpoint: false });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root?.render(
+        strategy.render({
+          agentId: "agent",
+          segments: {
+            historyVirtualized: [],
+            historyMounted: [userMessage(1)],
+            liveHead: [],
+          },
+          boundary: {
+            hasVirtualizedHistory: false,
+            hasMountedHistory: true,
+            hasLiveHead: false,
+          },
+          renderers: {
+            ...createRenderers(vi.fn()),
+            renderHistoryMountedRow: () => (
+              <div>
+                <textarea defaultValue="note" />
+                <button type="button">Copy</button>
+                <div data-testid="nested-scroll">nested</div>
+              </div>
+            ),
+          },
+          listEmptyComponent: null,
+          viewportRef: React.createRef<StreamViewportHandle>(),
+          routeBottomAnchorRequest: null,
+          isAuthoritativeHistoryReady: true,
+          onNearBottomChange: vi.fn(),
+          onNearHistoryStart: vi.fn().mockReturnValue(true),
+          isLoadingOlderHistory: false,
+          hasOlderHistory: false,
+          olderHistoryProgressKey: null,
+          scrollEnabled: true,
+          listStyle: null,
+          baseListContentContainerStyle: null,
+          forwardListContentContainerStyle: null,
+          contentMaxWidth: DEFAULT_CONTENT_MAX_WIDTH,
+        }),
+      );
+    });
+
+    const scrollContainer = container.querySelector<HTMLElement>(
+      '[data-testid="agent-chat-scroll"]',
+    );
+    const field = scrollContainer?.querySelector("textarea");
+    const button = scrollContainer?.querySelector("button");
+    const nested = scrollContainer?.querySelector<HTMLElement>('[data-testid="nested-scroll"]');
+    if (!scrollContainer || !field || !button || !nested) {
+      throw new Error("Expected transcript controls");
+    }
+    Object.defineProperty(scrollContainer, "clientHeight", { configurable: true, value: 400 });
+    Object.defineProperty(scrollContainer, "scrollHeight", { configurable: true, value: 2000 });
+    scrollContainer.scrollTop = 800;
+    nested.style.overflowY = "auto";
+    Object.defineProperty(nested, "clientHeight", { configurable: true, value: 80 });
+    Object.defineProperty(nested, "scrollHeight", { configurable: true, value: 400 });
+    nested.scrollTop = 40;
+
+    const press = (target: EventTarget, key: string) => {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      act(() => {
+        target.dispatchEvent(event);
+      });
+      return event;
+    };
+
+    field.focus();
+    expect(press(field, "PageDown").defaultPrevented).toBe(false);
+    expect(scrollContainer.scrollTop).toBe(800);
+
+    const buttonPointerDown = new MouseEvent("pointerdown", { bubbles: true, button: 0 });
+    Object.defineProperties(buttonPointerDown, {
+      isPrimary: { value: true },
+      pointerId: { value: 1 },
+      pointerType: { value: "mouse" },
+    });
+    act(() => {
+      button.dispatchEvent(buttonPointerDown);
+    });
+    expect(document.activeElement).not.toBe(scrollContainer);
+
+    expect(press(nested, "PageUp").defaultPrevented).toBe(false);
+    expect(scrollContainer.scrollTop).toBe(800);
+    nested.scrollTop = 0;
+    expect(press(nested, "PageUp").defaultPrevented).toBe(true);
+    expect(scrollContainer.scrollTop).toBe(800 - Math.floor(400 * 0.875));
+  });
 });
