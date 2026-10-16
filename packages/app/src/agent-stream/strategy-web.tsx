@@ -1409,11 +1409,11 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
     <div style={viewportStyle} data-window-content>
       <div
         ref={handleScrollContainerRef}
+        // Clicks focus the feed so viewport keys scroll it. -1 keeps that off the Tab order.
+        tabIndex={scrollEnabled ? -1 : undefined}
         data-testid="agent-chat-scroll"
         data-overlay-scrollbar={scrollEnabled && !isMobileBreakpoint ? "true" : undefined}
         id={`agent-chat-scroll-${shouldUseVirtualizer ? "web-dom-virtualized" : "web-dom-scroll"}`}
-        // Viewport keys scroll this element only while it is focused. The document itself does not scroll.
-        tabIndex={scrollEnabled ? 0 : undefined}
         style={scrollContainerStyle}
       >
         <div ref={handleContentRef} style={contentContainerStyle}>
