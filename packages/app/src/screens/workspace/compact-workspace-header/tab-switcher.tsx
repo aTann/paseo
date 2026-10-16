@@ -17,6 +17,8 @@ import {
   type WorkspaceTabMenuLabels,
 } from "@/screens/workspace/workspace-tab-menu";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
+import type { FileTabFileManagerReveal } from "@/workspace/open-in-file-manager/launch";
+import { useFileTabFileManagerReveal } from "@/workspace/open-in-file-manager/use-file-tab-file-manager-reveal";
 
 // The trigger draws at 32pt beside its island neighbours, so only vertical slop is free.
 const TAB_SWITCHER_TRIGGER_HIT_SLOP = { top: 8, bottom: 8 } as const;
@@ -157,6 +159,7 @@ function MobileWorkspaceTabOption({
   onCopyFilePath,
   onReloadAgent,
   onRenameTab,
+  revealInFileManager,
   onCloseTab,
   onCloseTabsAbove,
   onCloseTabsBelow,
@@ -176,6 +179,7 @@ function MobileWorkspaceTabOption({
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
+  revealInFileManager: FileTabFileManagerReveal | null;
   onCloseTab: (tabId: string) => Promise<void> | void;
   onCloseTabsAbove: (tabId: string) => Promise<void> | void;
   onCloseTabsBelow: (tabId: string) => Promise<void> | void;
@@ -218,6 +222,7 @@ function MobileWorkspaceTabOption({
     onCloseTabsAfter: onCloseTabsBelow,
     onCloseOtherTabs,
     labels: tabMenuLabels,
+    revealInFileManager,
   });
 
   const fallbackLabels = useMemo(
@@ -291,6 +296,10 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
   onCloseOtherTabs,
 }: MobileWorkspaceTabSwitcherProps) {
   const { t } = useTranslation();
+  const revealInFileManager = useFileTabFileManagerReveal({
+    serverId: normalizedServerId,
+    workspaceId: normalizedWorkspaceId,
+  });
   const tabFallbackLabels = useMemo(
     () => ({
       newTab: t("workspace.tabs.actions.newTab"),
@@ -407,6 +416,7 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
           onCopyFilePath={onCopyFilePath}
           onReloadAgent={onReloadAgent}
           onRenameTab={onRenameTab}
+          revealInFileManager={revealInFileManager}
           onCloseTab={onCloseTab}
           onCloseTabsAbove={onCloseTabsAbove}
           onCloseTabsBelow={onCloseTabsBelow}
@@ -426,6 +436,7 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
       onCopyFilePath,
       onReloadAgent,
       onRenameTab,
+      revealInFileManager,
       onCloseTab,
       onCloseTabsAbove,
       onCloseTabsBelow,

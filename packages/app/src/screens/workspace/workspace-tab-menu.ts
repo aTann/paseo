@@ -2,6 +2,7 @@ import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-
 import { i18n } from "@/i18n/i18next";
 import { encodeFilePathForPathSegment, encodeWorkspaceIdForPathSegment } from "@/utils/host-routes";
 import { buildDeterministicWorkspaceTabId } from "@/workspace-tabs/identity";
+import type { FileTabFileManagerReveal } from "@/workspace/open-in-file-manager/launch";
 
 export type WorkspaceTabMenuSurface = "desktop" | "mobile";
 
@@ -49,6 +50,7 @@ export type WorkspaceTabMenuEntry =
         | "arrow-right-to-line"
         | "copy-x"
         | "pencil"
+        | "folder-open"
         | "x";
       hint?: string;
       tooltip?: string;
@@ -79,6 +81,7 @@ interface BuildWorkspaceTabMenuEntriesInput {
   onCloseTabsAfter: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
   labels?: WorkspaceTabMenuLabels;
+  revealInFileManager?: FileTabFileManagerReveal | null;
 }
 
 interface BuildWorkspaceDesktopTabActionsInput {
@@ -96,6 +99,7 @@ interface BuildWorkspaceDesktopTabActionsInput {
   onCloseTabsToRight: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
   labels?: WorkspaceTabMenuLabels;
+  revealInFileManager?: FileTabFileManagerReveal | null;
 }
 
 export interface WorkspaceDesktopTabActions {
@@ -182,6 +186,7 @@ export function buildWorkspaceTabMenuEntries(
     onCloseTabsBefore,
     onCloseTabsAfter,
     onCloseOtherTabs,
+    revealInFileManager,
   } = input;
   const labels = input.labels ?? DEFAULT_WORKSPACE_TAB_MENU_LABELS;
   const isFirstTab = index === 0;
@@ -241,6 +246,18 @@ export function buildWorkspaceTabMenuEntries(
         void onCopyFilePath(filePath);
       },
     });
+    if (revealInFileManager) {
+      entries.push({
+        kind: "item",
+        key: "reveal-in-file-manager",
+        label: revealInFileManager.label,
+        icon: "folder-open",
+        testID: `${menuTestIDBase}-reveal-in-file-manager`,
+        onSelect: () => {
+          revealInFileManager.onSelect(filePath);
+        },
+      });
+    }
   }
 
   if (tab.target.kind === "agent" || tab.target.kind === "terminal") {
@@ -344,6 +361,7 @@ export function buildWorkspaceDesktopTabActions(
       onCloseTabsAfter: input.onCloseTabsToRight,
       onCloseOtherTabs: input.onCloseOtherTabs,
       labels: input.labels,
+      revealInFileManager: input.revealInFileManager,
     }),
     closeButtonTestId: getCloseButtonTestId(input.tab),
   };

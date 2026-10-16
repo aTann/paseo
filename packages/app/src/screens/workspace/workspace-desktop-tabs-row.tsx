@@ -16,6 +16,7 @@ import {
   ArrowRightToLine,
   ChevronDown,
   Copy,
+  FolderOpen,
   Pencil,
   RotateCw,
   Columns2,
@@ -91,6 +92,8 @@ import {
   useHorizontalScrollBoundary,
 } from "@/components/ui/horizontal-scroll-boundary";
 import { useSessionStore } from "@/stores/session-store";
+import { useFileTabFileManagerReveal } from "@/workspace/open-in-file-manager/use-file-tab-file-manager-reveal";
+import type { FileTabFileManagerReveal } from "@/workspace/open-in-file-manager/launch";
 
 const DROPDOWN_WIDTH = 220;
 const DEFAULT_INLINE_ADD_BUTTON_RESERVED_WIDTH = 36;
@@ -124,6 +127,7 @@ const AGENT_TOOLTIP_TITLE_MAX_LENGTH = 80;
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
 const ThemedX = withUnistyles(X);
 const ThemedCopy = withUnistyles(Copy);
+const ThemedFolderOpen = withUnistyles(FolderOpen);
 
 const ThemedRotateCw = withUnistyles(RotateCw);
 const ThemedArrowLeftToLine = withUnistyles(ArrowLeftToLine);
@@ -527,6 +531,8 @@ function TabContextMenuItem({
     switch (entry.icon) {
       case "copy":
         return <ThemedCopy size={16} uniProps={mutedColorMapping} />;
+      case "folder-open":
+        return <ThemedFolderOpen size={16} uniProps={mutedColorMapping} />;
       case "rotate-cw":
         return <ThemedRotateCw size={16} uniProps={mutedColorMapping} />;
       case "arrow-left-to-line":
@@ -1155,6 +1161,10 @@ function ResolvedWorkspaceDesktopTabsRow({
   onExitFocusMode,
 }: ResolvedWorkspaceDesktopTabsRowProps) {
   const { t } = useTranslation();
+  const revealInFileManager = useFileTabFileManagerReveal({
+    serverId: normalizedServerId,
+    workspaceId: normalizedWorkspaceId,
+  });
   const newTabKeys = useShortcutKeys("workspace-tab-new");
   const [tabsContainerWidth, setTabsContainerWidth] = useState<number>(0);
   const [exitFocusModeWidth, setExitFocusModeWidth] = useState<number>(0);
@@ -1469,6 +1479,7 @@ function ResolvedWorkspaceDesktopTabsRow({
           onCopyFilePath={onCopyFilePath}
           onReloadAgent={onReloadAgent}
           onRenameTab={onRenameTab}
+          revealInFileManager={revealInFileManager}
           onCloseTabsToLeft={onCloseTabsToLeft}
           onCloseTabsToRight={onCloseTabsToRight}
           onCloseOtherTabs={onCloseOtherTabs}
@@ -1500,6 +1511,7 @@ function ResolvedWorkspaceDesktopTabsRow({
       onCopyFilePath,
       onCopyResumeCommand,
       onNavigateTab,
+      revealInFileManager,
       onReloadAgent,
       onRenameTab,
       setHoveredCloseTabKey,
@@ -1626,6 +1638,7 @@ function ResolvedDesktopTabChip({
   onCopyFilePath,
   onReloadAgent,
   onRenameTab,
+  revealInFileManager,
   onCloseTabsToLeft,
   onCloseTabsToRight,
   onCloseOtherTabs,
@@ -1652,6 +1665,7 @@ function ResolvedDesktopTabChip({
   onCopyFilePath: (path: string) => Promise<void> | void;
   onReloadAgent: (agentId: string) => Promise<void> | void;
   onRenameTab: (tab: WorkspaceTabDescriptor) => void;
+  revealInFileManager: FileTabFileManagerReveal | null;
   onCloseTabsToLeft: (tabId: string) => Promise<void> | void;
   onCloseTabsToRight: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
@@ -1685,6 +1699,7 @@ function ResolvedDesktopTabChip({
         onCloseTabsToRight,
         onCloseOtherTabs,
         labels,
+        revealInFileManager,
       }),
     [
       index,
@@ -1700,6 +1715,7 @@ function ResolvedDesktopTabChip({
       labels,
       onReloadAgent,
       onRenameTab,
+      revealInFileManager,
       tabCount,
     ],
   );

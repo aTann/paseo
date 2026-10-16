@@ -272,6 +272,80 @@ describe("buildWorkspaceTabMenuEntries", () => {
     }
     copyFilePathEntry.onSelect();
     expect(onCopyFilePath).toHaveBeenCalledWith("/some/path.ts");
+    expect(labels).not.toContain("Reveal in Finder");
+  });
+
+  it("reveals a file tab in the file manager when that action is available", () => {
+    const onRevealInFileManager = vi.fn();
+    const fileTab: WorkspaceTabDescriptor = {
+      key: "file_abc",
+      tabId: "file_abc",
+      kind: "file",
+      target: { kind: "file", path: "src/app.ts" },
+    };
+    const entries = buildWorkspaceTabMenuEntries({
+      surface: "desktop",
+      tab: fileTab,
+      index: 0,
+      tabCount: 2,
+      menuTestIDBase: "workspace-tab-context-file_abc",
+      onCopyResumeCommand: vi.fn(),
+      onCopyAgentId: vi.fn(),
+      onCopyTerminalId: vi.fn(),
+      onCopyFilePath: vi.fn(),
+      onReloadAgent: vi.fn(),
+      onRenameTab: vi.fn(),
+      onCloseTab: vi.fn(),
+      onCloseTabsBefore: vi.fn(),
+      onCloseTabsAfter: vi.fn(),
+      onCloseOtherTabs: vi.fn(),
+      revealInFileManager: {
+        label: "Reveal in Finder",
+        onSelect: onRevealInFileManager,
+      },
+    });
+
+    const labels = entries.filter((entry) => entry.kind === "item").map((entry) => entry.label);
+    expect(labels.slice(0, 2)).toEqual(["Copy file path", "Reveal in Finder"]);
+
+    const revealEntry = entries.find(
+      (entry) => entry.kind === "item" && entry.key === "reveal-in-file-manager",
+    );
+    if (!revealEntry || revealEntry.kind !== "item") {
+      throw new Error("Reveal in file manager entry missing");
+    }
+    expect(revealEntry.icon).toBe("folder-open");
+    expect(revealEntry.testID).toBe("workspace-tab-context-file_abc-reveal-in-file-manager");
+    revealEntry.onSelect();
+    expect(onRevealInFileManager).toHaveBeenCalledWith("src/app.ts");
+  });
+
+  it("omits file manager reveal for agent tabs", () => {
+    const entries = buildWorkspaceTabMenuEntries({
+      surface: "desktop",
+      tab: createAgentTab(),
+      index: 0,
+      tabCount: 1,
+      menuTestIDBase: "workspace-tab-context-agent_123",
+      onCopyResumeCommand: vi.fn(),
+      onCopyAgentId: vi.fn(),
+      onCopyTerminalId: vi.fn(),
+      onCopyFilePath: vi.fn(),
+      onReloadAgent: vi.fn(),
+      onRenameTab: vi.fn(),
+      onCloseTab: vi.fn(),
+      onCloseTabsBefore: vi.fn(),
+      onCloseTabsAfter: vi.fn(),
+      onCloseOtherTabs: vi.fn(),
+      revealInFileManager: {
+        label: "Reveal in Finder",
+        onSelect: vi.fn(),
+      },
+    });
+
+    expect(
+      entries.some((entry) => entry.kind === "item" && entry.key === "reveal-in-file-manager"),
+    ).toBe(false);
   });
 
   it("uses a Changes close id for the working diff tab", () => {
