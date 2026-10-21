@@ -10,6 +10,7 @@ function emptyDraft(): ProjectConfigDraft {
     teardownText: "",
     teardownOriginalKind: "missing",
     scripts: [],
+    includedIgnoredText: "",
     metadataPrompts: {
       branchName: "",
       commitMessage: "",
@@ -348,5 +349,19 @@ describe("applyDraftToConfig", () => {
     const next = applyDraftToConfig({ draft, base });
     const scripts = next.scripts ?? {};
     expect(Object.keys(scripts)).toEqual(["dev"]);
+  });
+
+  it("keeps workspace-relative ignored folders and drops paths that leave the workspace", () => {
+    const base = PaseoConfigRawSchema.parse({
+      fileMentions: { includeIgnored: ["data/keep"], extra: true },
+    });
+    const draft = configToDraft(base);
+    expect(draft.includedIgnoredText).toBe("data/keep");
+    draft.includedIgnoredText = "data/keep/\n../outside\n.scratch\n";
+    const next = applyDraftToConfig({ draft, base });
+    expect(next.fileMentions).toEqual({
+      includeIgnored: ["data/keep", ".scratch"],
+      extra: true,
+    });
   });
 });

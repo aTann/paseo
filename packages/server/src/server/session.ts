@@ -216,6 +216,7 @@ import {
   type AgentUpdatesService,
 } from "./session/agent-updates/agent-updates-service.js";
 import { expandTilde } from "../utils/path.js";
+import { readFileMentionIncludedDirectories } from "../utils/paseo-config-file.js";
 import {
   searchDirectoryEntries,
   WORKSPACE_SEARCH_HIDDEN_DIRECTORIES,
@@ -5126,12 +5127,13 @@ export class Session {
       const workspaceCwd = cwd?.trim();
       const searchesWorkspace = Boolean(workspaceCwd);
       const homeRoot = process.env.HOME ?? homedir();
+      const root = workspaceCwd ? expandTilde(workspaceCwd) : homeRoot;
       // readdir on TCC-protected folders under ~/Library blocks forever for a process that cannot
       // show a consent prompt, and each blocked call holds a libuv threadpool thread.
       const excludedDiscoveryPaths =
         !searchesWorkspace && process.platform === "darwin" ? [join(homeRoot, "Library")] : [];
       const entries = await searchDirectoryEntries({
-        root: workspaceCwd ? expandTilde(workspaceCwd) : homeRoot,
+        root,
         query,
         pathFormat: searchesWorkspace ? "relative" : "absolute",
         pathQueryPolicy: searchesWorkspace ? "slashes" : "rooted",
@@ -5143,6 +5145,9 @@ export class Session {
         confidentResultScanThreshold: searchesWorkspace ? undefined : 5_000,
         respectGitIgnore: searchesWorkspace,
         excludedDiscoveryPaths,
+        includedIgnoredDirectories: searchesWorkspace
+          ? readFileMentionIncludedDirectories(root)
+          : [],
         includeFiles,
         includeDirectories,
         matchMode,

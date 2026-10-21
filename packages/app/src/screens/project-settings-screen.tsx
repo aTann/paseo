@@ -230,6 +230,10 @@ function ProjectSettingsBody({
 
   const data = readQuery.data;
   const supportsCustomIcon = useHostFeature(selectedHost.serverId, "projectCustomIcon");
+  const supportsFileMentionIncludes = useHostFeature(
+    selectedHost.serverId,
+    "fileMentionIgnoredDirectories",
+  );
   const customIconRevision = selectedHost.customIconRevision ?? null;
   const projectIconTargets = useMemo(() => {
     const target = createProjectIconTarget({
@@ -314,6 +318,7 @@ function ProjectSettingsBody({
         queryKey,
         client,
         onReload: handleReload,
+        supportsFileMentionIncludes,
         isHostGone,
         onBackToProjects,
         showBackToProjects,
@@ -332,6 +337,7 @@ interface RenderContentInput {
   queryKey: readonly [string, string, string];
   client: DaemonClient;
   onReload: () => void;
+  supportsFileMentionIncludes: boolean;
   isHostGone: boolean;
   onBackToProjects: () => void;
   showBackToProjects: boolean;
@@ -347,6 +353,7 @@ function renderContent({
   queryKey,
   client,
   onReload,
+  supportsFileMentionIncludes,
   isHostGone,
   onBackToProjects,
   showBackToProjects,
@@ -395,6 +402,7 @@ function renderContent({
       queryKey={queryKey}
       client={client}
       onReload={onReload}
+      supportsFileMentionIncludes={supportsFileMentionIncludes}
     />
   );
 }
@@ -476,6 +484,7 @@ interface ProjectConfigFormProps {
   queryKey: readonly [string, string, string];
   client: DaemonClient;
   onReload: () => void;
+  supportsFileMentionIncludes: boolean;
 }
 
 function ProjectConfigForm({
@@ -486,6 +495,7 @@ function ProjectConfigForm({
   queryKey,
   client,
   onReload,
+  supportsFileMentionIncludes,
 }: ProjectConfigFormProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -550,6 +560,11 @@ function ProjectConfigForm({
   );
   const handleTeardownChange = useCallback(
     (text: string) => updateDraft((d) => ({ ...d, teardownText: text })),
+    [updateDraft],
+  );
+
+  const handleIncludedIgnoredChange = useCallback(
+    (text: string) => updateDraft((d) => ({ ...d, includedIgnoredText: text })),
     [updateDraft],
   );
 
@@ -757,6 +772,28 @@ function ProjectConfigForm({
           )}
         </View>
       </SettingsGroup>
+
+      {supportsFileMentionIncludes ? (
+        <SettingsGroup
+          title={t("settings.project.fileMentions.title")}
+          info={t("settings.project.fileMentions.info")}
+          testID="file-mentions-group"
+        >
+          <SettingsSection
+            title={t("settings.project.fileMentions.folders")}
+            testID="file-mentions-section"
+            flush
+          >
+            <SettingsTextAreaCard
+              testID="file-mentions-include-input"
+              accessibilityLabel={t("settings.project.fileMentions.accessibility")}
+              value={draft.includedIgnoredText}
+              onChangeText={handleIncludedIgnoredChange}
+              placeholder="vendor/local"
+            />
+          </SettingsSection>
+        </SettingsGroup>
+      ) : null}
 
       <SettingsGroup
         title={t("settings.project.metadata.title")}

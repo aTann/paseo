@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { isPlatform } from "../test-utils/platform.js";
 import { getWorktreeSetupCommands, getWorktreeTeardownCommands } from "./worktree.js";
 import {
+  readFileMentionIncludedDirectories,
   readPaseoConfigForEdit,
   statPaseoConfigPath,
   writePaseoConfigForEdit,
@@ -19,6 +20,15 @@ describe("paseo config file substrate", () => {
 
   afterEach(() => {
     rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("reads ignored folders included in file mentions", () => {
+    expect(readFileMentionIncludedDirectories(tempDir)).toEqual([]);
+    writeFileSync(
+      join(tempDir, "paseo.json"),
+      JSON.stringify({ fileMentions: { includeIgnored: ["data/keep"] } }),
+    );
+    expect(readFileMentionIncludedDirectories(tempDir)).toEqual(["data/keep"]);
   });
 
   it("returns null config and revision when paseo.json is missing", () => {

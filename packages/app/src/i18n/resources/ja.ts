@@ -2841,6 +2841,12 @@ export const ja: TranslationResources = {
           remove: "削除",
         },
       },
+      fileMentions: {
+        title: "ファイルメンション",
+        info: "ここに書いた Git 無視フォルダは @ 候補に出ます。ワークスペース相対パスを 1 行に 1 つ。",
+        folders: "含めるフォルダ",
+        accessibility: "@ 候補に含める無視フォルダ",
+      },
       metadata: {
         title: "メタデータ生成",
         info: "Paseoがメタデータ生成に使うAIプロンプトへ追加する、プロジェクト固有の指示です。ブランチ名、コミット形式、PR形式など、チームの規約を反映するために使います。",

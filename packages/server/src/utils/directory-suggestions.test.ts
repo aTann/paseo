@@ -56,6 +56,7 @@ async function searchRelativeDirectoryEntries(options: {
   maxDepth?: number;
   maxEntriesScanned?: number;
   respectGitIgnore?: boolean;
+  includedIgnoredDirectories?: readonly string[];
 }) {
   return searchDirectoryEntries({
     root: options.cwd,
@@ -71,6 +72,7 @@ async function searchRelativeDirectoryEntries(options: {
     maxDepth: options.maxDepth,
     maxEntriesScanned: options.maxEntriesScanned,
     respectGitIgnore: options.respectGitIgnore,
+    includedIgnoredDirectories: options.includedIgnoredDirectories,
   });
 }
 
@@ -944,6 +946,88 @@ describe("relative typed-entry configuration", () => {
       exactResults: [{ path: "generated/search-notes.md", kind: "file" }],
       fuzzyResults: [{ path: "docs/search-notes.md", kind: "file" }],
     });
+  });
+
+  it("puts configured gitignored folders back into suggestions", async () => {
+    initGitRepo(workspaceDir, "data/\n.scratch/\n");
+    mkdirSync(path.join(workspaceDir, "data", "keep"), { recursive: true });
+    mkdirSync(path.join(workspaceDir, "data", "other"), { recursive: true });
+    mkdirSync(path.join(workspaceDir, "data", "node_modules", "pkg"), { recursive: true });
+    mkdirSync(path.join(workspaceDir, ".scratch"), { recursive: true });
+    writeFileSync(path.join(workspaceDir, "data", "keep", "kept-notes.md"), "notes\n");
+    writeFileSync(path.join(workspaceDir, "data", "other", "other-secret.md"), "secret\n");
+    writeFileSync(path.join(workspaceDir, "data", "node_modules", "pkg", "index.js"), "");
+    writeFileSync(path.join(workspaceDir, ".scratch", "scratch-draft.md"), "draft\n");
+
+    const common = {
+      cwd: workspaceDir,
+      limit: 20,
+      includeFiles: true,
+      includeDirectories: true,
+      respectGitIgnore: true,
+    };
+
+    await expect(
+      searchRelativeDirectoryEntries({ ...common, query: "kept-notes" }),
+    ).resolves.toEqual([]);
+
+    const includedTree = await searchRelativeDirectoryEntries({
+      ...common,
+      query: "kept-notes",
+      includedIgnoredDirectories: ["data"],
+    });
+    const sibling = await searchRelativeDirectoryEntries({
+      ...common,
+      query: "other-secret",
+      includedIgnoredDirectories: ["data/keep"],
+    });
+    const nestedFile = await searchRelativeDirectoryEntries({
+      ...common,
+      query: "kept-notes",
+      includedIgnoredDirectories: ["data/keep"],
+    });
+    const heavyDirectory = await searchRelativeDirectoryEntries({
+      ...common,
+      query: "index.js",
+      includedIgnoredDirectories: ["data"],
+    });
+    const hiddenFolder = await searchRelativeDirectoryEntries({
+      ...common,
+      query: "scratch-draft",
+      includedIgnoredDirectories: [".scratch"],
+    });
+    const hiddenDirectory = await searchRelativeDirectoryEntries({
+      ...common,
+      query: ".scratch",
+      includeFiles: false,
+      includedIgnoredDirectories: [".scratch"],
+    });
+    const rootChildren = await searchRelativeDirectoryEntries({
+      ...common,
+      query: "",
+      includeFiles: false,
+      includedIgnoredDirectories: ["data/keep"],
+    });
+    const parentQuery = await searchRelativeDirectoryEntries({
+      ...common,
+      query: "data",
+      includedIgnoredDirectories: ["data/keep"],
+    });
+
+    expect(includedTree).toEqual([{ path: "data/keep/kept-notes.md", kind: "file" }]);
+    expect(sibling).toEqual([]);
+    expect(nestedFile).toEqual([{ path: "data/keep/kept-notes.md", kind: "file" }]);
+    expect(heavyDirectory).toEqual([]);
+    expect(hiddenFolder).toEqual([{ path: ".scratch/scratch-draft.md", kind: "file" }]);
+    expect(hiddenDirectory).toEqual([{ path: ".scratch", kind: "directory" }]);
+    expect(rootChildren.map((entry) => entry.path)).not.toContain("data");
+    expect(parentQuery.map((entry) => entry.path)).not.toContain("data");
+    expect(parentQuery).toEqual(
+      expect.arrayContaining([
+        { path: "data/keep", kind: "directory" },
+        { path: "data/keep/kept-notes.md", kind: "file" },
+      ]),
+    );
   });
 
   it.skipIf(isWindows)(

@@ -46,6 +46,18 @@ export function statPaseoConfigPath(repoRoot: string): PaseoConfigRevision | nul
   };
 }
 
+export function readFileMentionIncludedDirectories(repoRoot: string): readonly string[] {
+  try {
+    const json = readPaseoConfigJson(repoRoot);
+    if (!json || typeof json !== "object") return [];
+    const parsed = PaseoConfigRawSchema.safeParse(json);
+    if (!parsed.success) return [];
+    return parsed.data.fileMentions?.includeIgnored ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export function readPaseoConfigJson(repoRoot: string): unknown {
   const configPath = resolvePaseoConfigPath(repoRoot);
   if (!existsSync(configPath)) {

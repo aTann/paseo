@@ -1,3 +1,4 @@
+import { normalizeFileMentionIncludedDirectories } from "@getpaseo/protocol/paseo-config-schema";
 import type {
   PaseoConfigRaw,
   PaseoMetadataGeneration,
@@ -26,6 +27,7 @@ export interface ProjectConfigDraft {
   teardownText: string;
   teardownOriginalKind: LifecycleOriginalKind;
   scripts: ProjectScriptDraft[];
+  includedIgnoredText: string;
   metadataPrompts: Record<MetadataPromptKey, string>;
   metadataGenerationBase: PaseoMetadataGeneration | undefined;
 }
@@ -141,6 +143,7 @@ export function configToDraft(config: PaseoConfigRaw | null | undefined): Projec
     teardownText: teardown.text,
     teardownOriginalKind: teardown.kind,
     scripts,
+    includedIgnoredText: (config?.fileMentions?.includeIgnored ?? []).join("\n"),
     metadataPrompts,
     metadataGenerationBase: metadataGeneration,
   };
@@ -241,6 +244,20 @@ export function applyDraftToConfig(input: ApplyDraftInput): PaseoConfigRaw {
     delete result.metadataGeneration;
   } else {
     result.metadataGeneration = nextMetadataGeneration;
+  }
+  const nextFileMentions: Record<string, unknown> = { ...baseConfig.fileMentions };
+  const includeIgnored = normalizeFileMentionIncludedDirectories(
+    input.draft.includedIgnoredText.split("\n"),
+  );
+  if (includeIgnored.length === 0) {
+    delete nextFileMentions.includeIgnored;
+  } else {
+    nextFileMentions.includeIgnored = includeIgnored;
+  }
+  if (Object.keys(nextFileMentions).length === 0) {
+    delete result.fileMentions;
+  } else {
+    result.fileMentions = nextFileMentions;
   }
   return result as PaseoConfigRaw;
 }

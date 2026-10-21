@@ -2940,6 +2940,12 @@ export const en = {
           remove: "Remove",
         },
       },
+      fileMentions: {
+        title: "File mentions",
+        info: "Gitignored folders listed here show up in @ suggestions. One workspace-relative path per line.",
+        folders: "Included folders",
+        accessibility: "Gitignored folders included in @ suggestions",
+      },
       metadata: {
         title: "Metadata generation",
         info: "Project-specific instructions injected into the AI prompts Paseo uses to generate metadata - use them to enforce your team's conventions like branch naming, commit style, or PR format",

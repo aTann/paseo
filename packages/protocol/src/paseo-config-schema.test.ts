@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { PaseoConfigRawSchema, PaseoConfigSchema } from "@getpaseo/protocol/paseo-config-schema";
+import {
+  normalizeFileMentionIncludedDirectories,
+  PaseoConfigRawSchema,
+  PaseoConfigSchema,
+} from "@getpaseo/protocol/paseo-config-schema";
 
 describe("paseo config schema", () => {
   it("parses an empty config without metadata generation", () => {
@@ -198,6 +202,31 @@ describe("paseo config schema", () => {
     };
 
     expect(PaseoConfigRawSchema.parse(config)).toEqual(config);
+  });
+
+  it("parses ignored folders included in file mentions", () => {
+    expect(
+      PaseoConfigRawSchema.parse({
+        fileMentions: { includeIgnored: ["data/keep", ".scratch"] },
+      }),
+    ).toEqual({
+      fileMentions: { includeIgnored: ["data/keep", ".scratch"] },
+    });
+  });
+
+  it("normalizes file mention directories to workspace-relative paths", () => {
+    expect(
+      normalizeFileMentionIncludedDirectories([
+        " data/keep/ ",
+        "data\\keep",
+        ".scratch",
+        "../outside",
+        "/etc",
+        "C:/Windows",
+        "",
+        "data/./keep",
+      ]),
+    ).toEqual(["data/keep", ".scratch"]);
   });
 
   it("raw schema falls back to an empty metadata generator entry when instructions has an invalid type", () => {

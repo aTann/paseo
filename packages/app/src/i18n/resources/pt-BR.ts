@@ -2854,6 +2854,12 @@ export const ptBR: TranslationResources = {
           remove: "Remover",
         },
       },
+      fileMentions: {
+        title: "Menções de arquivos",
+        info: "Pastas ignoradas pelo Git listadas aqui aparecem nas sugestões @. Um caminho relativo ao workspace por linha.",
+        folders: "Pastas incluídas",
+        accessibility: "Pastas ignoradas incluídas nas sugestões @",
+      },
       metadata: {
         title: "Geração de metadados",
         info: "Instruções específicas do projeto injetadas nos prompts de IA que o Paseo usa para gerar metadados. Use-as para aplicar convenções da sua equipe, como nomes de branch, estilo de commit ou formato de PR",

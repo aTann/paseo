@@ -2871,6 +2871,12 @@ export const es: TranslationResources = {
           remove: "Eliminar",
         },
       },
+      fileMentions: {
+        title: "Menciones de archivos",
+        info: "Las carpetas ignoradas por Git que escribas aquí aparecen en las sugerencias @. Una ruta relativa al espacio de trabajo por línea.",
+        folders: "Carpetas incluidas",
+        accessibility: "Carpetas ignoradas incluidas en las sugerencias @",
+      },
       metadata: {
         title: "Generación de metadatos",
         info: "Instrucciones específicas del proyecto inyectadas en los mensajes de IA quePaseoutiliza para generar metadatos; úselas para hacer cumplir las convenciones de su equipo, como la denominación de ramas, el estilo de confirmación o el formatoPR.",

@@ -2825,6 +2825,12 @@ export const ko: TranslationResources = {
           remove: "제거",
         },
       },
+      fileMentions: {
+        title: "파일 멘션",
+        info: "여기 적힌 Git 무시 폴더는 @ 제안에 나타납니다. 워크스페이스 상대 경로를 한 줄에 하나씩 입력하세요.",
+        folders: "포함할 폴더",
+        accessibility: "@ 제안에 포함할 무시된 폴더",
+      },
       metadata: {
         title: "메타데이터 생성",
         info: "Paseo가 메타데이터를 생성하는 데 사용하는 AI 프롬프트에 주입되는 프로젝트별 지침 - 브랜치 이름, 커밋 스타일, PR 형식 같은 팀 규칙을 적용하는 데 사용하세요",

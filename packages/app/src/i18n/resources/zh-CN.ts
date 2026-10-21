@@ -2777,6 +2777,12 @@ export const zhCN: TranslationResources = {
           remove: "移除",
         },
       },
+      fileMentions: {
+        title: "文件提及",
+        info: "写在这里的被 Git 忽略的文件夹会出现在 @ 提示中。每行一个相对工作区的路径。",
+        folders: "包含的文件夹",
+        accessibility: "出现在 @ 提示中的被忽略文件夹",
+      },
       metadata: {
         title: "元数据生成",
         info: "注入到 Paseo 用来生成元数据的 AI prompts 中的 Project 专属指令，可用于强制执行团队约定，例如分支命名、提交风格或 PR 格式",

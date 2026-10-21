@@ -2878,6 +2878,12 @@ export const fr: TranslationResources = {
           remove: "Supprimer",
         },
       },
+      fileMentions: {
+        title: "Mentions de fichiers",
+        info: "Les dossiers ignorés par Git listés ici apparaissent dans les suggestions @. Un chemin relatif à l'espace de travail par ligne.",
+        folders: "Dossiers inclus",
+        accessibility: "Dossiers ignorés inclus dans les suggestions @",
+      },
       metadata: {
         title: "Génération des métadonnées",
         info: "Instructions propres au projet, injectées dans les prompts IA que Paseo utilise pour générer les métadonnées : servez-vous-en pour imposer les conventions de votre équipe (nommage des branches, style de commit, format des PR).",

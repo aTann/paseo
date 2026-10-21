@@ -2,6 +2,8 @@ import type { Dirent, Stats } from "node:fs";
 import * as fs from "node:fs/promises";
 import path from "node:path";
 import pLimit from "p-limit";
+
+import { normalizeFileMentionIncludedDirectories } from "@getpaseo/protocol/paseo-config-schema";
 import { scorePathMatch, type MatchScore } from "@getpaseo/protocol/search/text-match";
 import { isPathInsideRoot } from "./path.js";
 import { runGitCommand } from "./run-git-command.js";
@@ -36,6 +38,7 @@ export interface SearchDirectoryEntriesOptions {
   // Absolute paths that discovery never walks into. A path the caller types explicitly still
   // resolves, and browsing inside one lists a single level at a time.
   excludedDiscoveryPaths?: readonly string[];
+  includedIgnoredDirectories?: readonly string[];
 }
 
 interface QueryPlan {
@@ -178,7 +181,8 @@ const gitIgnoredPathsCache = new Map<string, GitIgnoredPathsCacheEntry>();
 
 // Discovery and retrieval filter differently, on purpose. Discovery — anything that ranks or
 // browses candidates the caller has not named — drops gitignored and hidden entries, so pickers
-// do not offer build output. Retrieval of a path the caller named exactly applies no ignore or
+// do not offer build output. includedIgnoredDirectories puts those folders, and everything under
+// them, back into discovery. Retrieval of a path the caller named exactly applies no ignore or
 // hidden filtering; the only question is whether the path stays inside the root. Clicking a file
 // reference an agent wrote must open it whether or not Git tracks it.
 export async function searchDirectoryEntries(
@@ -278,6 +282,9 @@ function buildSearchInput(
     confidentResultScanThreshold: options.confidentResultScanThreshold,
     gitIgnoredPaths,
     excludedDiscoveryPaths,
+    includedDirectories: normalizeFileMentionIncludedDirectories(
+      options.includedIgnoredDirectories ?? [],
+    ),
   };
 }
 
@@ -314,24 +321,29 @@ interface SearchInput {
   confidentResultScanThreshold: number | undefined;
   gitIgnoredPaths: Set<string>;
   excludedDiscoveryPaths: Set<string>;
+  includedDirectories: readonly string[];
 }
 
 async function searchChildren(input: SearchInput): Promise<RankedEntry[]> {
   const visibleParent = path.resolve(input.root, input.plan.parentPart || ".");
   const parent = await realpath(visibleParent).catch(() => null);
   if (!parent || !isPathInsideRoot(input.root, parent)) return [];
-  if (isGitIgnoredPath(parent, input)) return [];
+  if (!canSearchDirectory(parent, input)) return [];
   // Browsing inside an excluded path is explicit: the caller typed it, so list what is there.
   const discoveryInput = isInsideExcludedPath(parent, input)
     ? { ...input, excludedDiscoveryPaths: new Set<string>() }
     : input;
   const ranked: RankedEntry[] = [];
   for await (const entry of readChildren(parent)) {
-    if (!isPathInsideRoot(input.root, entry.resolvedPath) || !shouldDiscover(entry, discoveryInput))
+    const visiblePath = path.join(visibleParent, entry.name);
+    if (
+      !isPathInsideRoot(input.root, entry.resolvedPath) ||
+      !shouldDiscover(entry, discoveryInput, visiblePath)
+    )
       continue;
     const candidate: TraversedEntry = {
       ...entry,
-      visiblePath: path.join(visibleParent, entry.name),
+      visiblePath,
       depth: 1,
     };
     if (shouldSuggest(candidate, input)) ranked.push(rank(candidate, input));
@@ -388,12 +400,9 @@ async function* walkChildren({
   visited,
 }: WalkChildrenOptions): AsyncGenerator<AsyncGenerator<TraversedEntry>> {
   for await (const child of readChildren(parent.resolvedPath)) {
-    if (!staysInsideRoot(child, input.root) || !shouldDiscover(child, input)) continue;
-    yield walkBranch(
-      { ...child, visiblePath: path.join(parent.visiblePath, child.name), depth },
-      input,
-      visited,
-    );
+    const visiblePath = path.join(parent.visiblePath, child.name);
+    if (!staysInsideRoot(child, input.root) || !shouldDiscover(child, input, visiblePath)) continue;
+    yield walkBranch({ ...child, visiblePath, depth }, input, visited);
   }
 }
 
@@ -419,15 +428,26 @@ function staysInsideRoot(entry: ChildEntry, root: string): boolean {
   return !entry.viaSymlink || isPathInsideRoot(root, entry.resolvedPath);
 }
 
-function shouldDiscover(entry: ChildEntry, input: SearchInput): boolean {
-  if (isNewlyGitIgnored(entry, input)) return false;
+type IncludeRelation = "inside" | "ancestor" | "none";
+
+function shouldDiscover(entry: ChildEntry, input: SearchInput, visiblePath: string): boolean {
   if (isNewlyExcluded(entry, input)) return false;
+  if (entry.kind === "directory" && IGNORED_DIRECTORY_NAMES.has(entry.name)) return false;
+  const relation = includeRelationForPath(visiblePath, input);
+  const ignored = isEntryGitIgnored(entry, input);
+  // An ignored or hidden parent still has to be walked when a configured folder lives under it.
+  // The parent itself stays out of suggestions.
+  if (relation === "ancestor" && entry.kind === "directory") {
+    const hidden = entry.name.startsWith(".") && !input.hiddenDirectoryNames.has(entry.name);
+    if (ignored || hidden) return true;
+  }
+  if (ignored && relation !== "inside") return false;
   if (entry.kind === "file") {
     return input.includeFiles && !entry.name.startsWith(".");
   }
-  if (IGNORED_DIRECTORY_NAMES.has(entry.name)) return false;
   if (!entry.name.startsWith(".")) return true;
-  return input.hiddenDirectoryNames.has(entry.name);
+  if (input.hiddenDirectoryNames.has(entry.name)) return true;
+  return relation === "inside" && isConfiguredDirectory(visiblePath, input);
 }
 
 // Traversal only descends through entries that already passed this check, so every ancestor of
@@ -462,8 +482,53 @@ function isGitIgnoredPath(absolutePath: string, input: SearchInput): boolean {
   return false;
 }
 
+function isEntryGitIgnored(entry: ChildEntry, input: SearchInput): boolean {
+  if (input.includedDirectories.length === 0) return isNewlyGitIgnored(entry, input);
+  return isGitIgnoredPath(entry.resolvedPath, input);
+}
+
+function canSearchDirectory(absolutePath: string, input: SearchInput): boolean {
+  if (!isGitIgnoredPath(absolutePath, input)) return true;
+  const relation = includeRelationForPath(absolutePath, input);
+  return relation === "inside" || relation === "ancestor";
+}
+
+function isConfiguredDirectory(visiblePath: string, input: SearchInput): boolean {
+  const relative = workspaceRelativePath(input.root, visiblePath);
+  return relative !== null && input.includedDirectories.includes(relative);
+}
+
+function isTraverseOnly(entry: TraversedEntry, input: SearchInput): boolean {
+  if (includeRelationForPath(entry.visiblePath, input) !== "ancestor") return false;
+  if (isEntryGitIgnored(entry, input)) return true;
+  return entry.name.startsWith(".") && !input.hiddenDirectoryNames.has(entry.name);
+}
+
+function includeRelationForPath(absolutePath: string, input: SearchInput): IncludeRelation {
+  if (input.includedDirectories.length === 0) return "none";
+  const relative = workspaceRelativePath(input.root, absolutePath);
+  if (!relative) return "none";
+  return includeRelation(relative, input.includedDirectories);
+}
+
+function includeRelation(relativePath: string, includes: readonly string[]): IncludeRelation {
+  let ancestor = false;
+  for (const include of includes) {
+    if (relativePath === include || relativePath.startsWith(`${include}/`)) return "inside";
+    if (include.startsWith(`${relativePath}/`)) ancestor = true;
+  }
+  return ancestor ? "ancestor" : "none";
+}
+
+function workspaceRelativePath(root: string, absolutePath: string): string | null {
+  const relative = path.relative(root, absolutePath);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return relative.split(path.sep).join("/");
+}
+
 function shouldSuggest(entry: TraversedEntry, input: SearchInput): boolean {
-  if (entry.name.startsWith(".")) return false;
+  if (isTraverseOnly(entry, input)) return false;
+  if (entry.name.startsWith(".") && !isConfiguredDirectory(entry.visiblePath, input)) return false;
   if (entry.kind === "directory" && !input.includeDirectories) return false;
   if (entry.kind === "file" && !input.includeFiles) return false;
   if (!input.plan.normalizedQuery) return true;

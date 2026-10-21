@@ -71,13 +71,42 @@ export const PaseoMetadataGenerationSchema = z
   .passthrough()
   .catch({});
 
+export const PaseoFileMentionsSchema = z
+  .object({
+    includeIgnored: z.array(z.string()).optional(),
+  })
+  .passthrough();
+
 export const PaseoConfigRawSchema = z
   .object({
     worktree: PaseoWorktreeConfigRawSchema.optional(),
     scripts: z.record(z.string(), PaseoScriptEntryRawSchema).optional(),
     metadataGeneration: PaseoMetadataGenerationSchema.optional(),
+    fileMentions: PaseoFileMentionsSchema.optional(),
   })
   .passthrough();
+
+// Workspace-relative directory paths. `..`, absolute paths, and empty segments are dropped so a
+// project config cannot point @ mentions outside the workspace.
+export function normalizeFileMentionIncludedDirectories(paths: readonly string[]): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of paths) {
+    const next = normalizeFileMentionIncludedDirectory(raw);
+    if (!next || seen.has(next)) continue;
+    seen.add(next);
+    normalized.push(next);
+  }
+  return normalized;
+}
+
+function normalizeFileMentionIncludedDirectory(raw: string): string | null {
+  const trimmed = raw.trim().replaceAll("\\", "/");
+  if (!trimmed || trimmed.startsWith("/") || /^[A-Za-z]:/.test(trimmed)) return null;
+  const parts = trimmed.split("/").filter((part) => part.length > 0 && part !== ".");
+  if (parts.length === 0 || parts.some((part) => part === "..")) return null;
+  return parts.join("/");
+}
 
 export const WorktreeConfigSchema = PaseoWorktreeConfigRawSchema.extend({
   setup: z.unknown().optional().transform(normalizeLifecycleCommands),
