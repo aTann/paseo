@@ -273,6 +273,7 @@ describe("buildWorkspaceTabMenuEntries", () => {
     copyFilePathEntry.onSelect();
     expect(onCopyFilePath).toHaveBeenCalledWith("/some/path.ts");
     expect(labels).not.toContain("Reveal in Finder");
+    expect(entries[1]).toEqual({ kind: "file-panel-open-with", key: "file-panel-open-with" });
   });
 
   it("reveals a file tab in the file manager when that action is available", () => {

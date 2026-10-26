@@ -62,6 +62,11 @@ export type WorkspaceTabMenuEntry =
   | {
       kind: "separator";
       key: string;
+    }
+  | {
+      /** Where the file tab's "Open with…" row goes; it renders only for files with several panels. */
+      kind: "file-panel-open-with";
+      key: string;
     };
 
 interface BuildWorkspaceTabMenuEntriesInput {
@@ -258,6 +263,7 @@ export function buildWorkspaceTabMenuEntries(
         },
       });
     }
+    entries.push({ kind: "file-panel-open-with", key: "file-panel-open-with" });
   }
 
   if (tab.target.kind === "agent" || tab.target.kind === "terminal") {
