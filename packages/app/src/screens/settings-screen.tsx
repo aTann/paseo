@@ -136,7 +136,11 @@ import {
   type HostSectionSlug,
   type SettingsSectionSlug,
 } from "@/utils/host-routes";
-import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
+import {
+  selectSettingsHost,
+  useSettingsHostSelection,
+  useSettingsSidebarScroll,
+} from "@/navigation/settings-presentation";
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
 import { isWeb } from "@/constants/platform";
 
@@ -948,6 +952,7 @@ function SettingsSidebar({
   const items = SIDEBAR_SECTION_ITEMS.filter((item) => isSectionAvailable(item, isDesktopApp));
   const insets = useSafeAreaInsets();
   const isDesktop = layout === "desktop";
+  const sidebarScroll = useSettingsSidebarScroll(isDesktop);
   const outerContainerStyle = useMemo(
     () => [isDesktop ? sidebarStyles.desktopContainer : sidebarStyles.mobileContainer],
     [isDesktop],
@@ -1060,6 +1065,7 @@ function SettingsSidebar({
             style={sidebarStyles.scrollBody}
             showsVerticalScrollIndicator={false}
             testID="settings-sidebar-scroll-body"
+            {...sidebarScroll}
           >
             {sidebarBody}
           </ScrollView>
@@ -1101,21 +1107,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   const hosts = useHosts();
   const localServerId = useLocalDaemonServerId();
   const sortedHosts = useSortedHosts(hosts, localServerId);
-  const lastWorkspaceSelection = useLastWorkspaceSelection();
-  const routedSettingsHostServerId =
-    view.kind === "host" || view.kind === "project" || view.kind === "plugin"
-      ? view.serverId
-      : null;
-  const [selectedSettingsHostServerId, setSelectedSettingsHostServerId] = useState<string | null>(
-    routedSettingsHostServerId ?? lastWorkspaceSelection?.serverId ?? null,
-  );
-  useFocusEffect(
-    useCallback(() => {
-      setSelectedSettingsHostServerId(
-        routedSettingsHostServerId ?? lastWorkspaceSelection?.serverId ?? null,
-      );
-    }, [lastWorkspaceSelection?.serverId, routedSettingsHostServerId]),
-  );
+  const selectedSettingsHostServerId = useSettingsHostSelection();
 
   // The host the four sections scope to: the host on the active view, otherwise
   // the picker choice, otherwise the connected local daemon, otherwise the first host.
@@ -1235,7 +1227,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   // host detail route, keep that detail section and swap only the host segment.
   const handleSelectHost = useCallback(
     (serverId: string) => {
-      setSelectedSettingsHostServerId(serverId);
+      selectSettingsHost(serverId);
       if (view.kind === "project") {
         const target = buildSettingsHostSectionRoute(serverId, "projects");
         if (isCompactLayout) {
@@ -1474,7 +1466,11 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
         </WindowChromeRegion>
         <WindowChromeRegion corners="top-right">
           <View style={desktopStyles.contentPane} testID="settings-detail-pane">
-            <PageLayout title={detailTitle} titleTestID="settings-detail-header-title">
+            <PageLayout
+              title={detailTitle}
+              titleTestID="settings-detail-header-title"
+              testID="settings-detail-scroll-body"
+            >
               {content}
             </PageLayout>
           </View>
