@@ -38,6 +38,7 @@ tsconfig.tsbuildinfo
 .vscode/
 .idea/
 *.sublime-*
+.history/
 
 # Testing
 coverage/
