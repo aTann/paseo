@@ -1,3 +1,4 @@
+import { workspaceTabSwitcherPopoverLayout } from "../workspace-tab-layout";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { Keyboard, Pressable, Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -125,14 +126,15 @@ function getFallbackTabOptionDescription(
 }
 
 interface MobileWorkspaceTabSwitcherProps {
+  paneId?: string;
   tabs: WorkspaceTabDescriptor[];
   activeTabKey: string;
   normalizedServerId: string;
   normalizedWorkspaceId: string;
   onSelectSwitcherTab: (key: string) => void;
   createTerminalDisabled: boolean;
-  onCreateDraftTab: () => void;
-  onCreateTerminal: () => void;
+  onCreateDraftTab: (input?: { paneId?: string }) => void;
+  onCreateTerminal: (input?: { paneId?: string }) => void;
   onCopyResumeCommand: (agentId: string) => Promise<void> | void;
   onCopyAgentId: (agentId: string) => Promise<void> | void;
   onCopyTerminalId: (terminalId: string) => Promise<void> | void;
@@ -290,6 +292,7 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
   createTerminalDisabled,
   onCreateDraftTab,
   onCreateTerminal,
+  paneId,
   onCopyResumeCommand,
   onCopyAgentId,
   onCopyTerminalId,
@@ -351,13 +354,13 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
 
   const handleNewAgent = useCallback(() => {
     setIsOpen(false);
-    onCreateDraftTab();
-  }, [onCreateDraftTab]);
+    onCreateDraftTab({ paneId });
+  }, [onCreateDraftTab, paneId]);
 
   const handleNewTerminal = useCallback(() => {
     setIsOpen(false);
-    onCreateTerminal();
-  }, [onCreateTerminal]);
+    onCreateTerminal({ paneId });
+  }, [onCreateTerminal, paneId]);
 
   const footer = useMemo(
     () => (
@@ -467,6 +470,7 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
       </Pressable>
 
       <Combobox
+        {...workspaceTabSwitcherPopoverLayout}
         options={tabSwitcherOptions}
         value={activeTabKey}
         onSelect={onSelectSwitcherTab}

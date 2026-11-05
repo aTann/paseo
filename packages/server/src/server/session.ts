@@ -8052,6 +8052,7 @@ export class Session {
         agentManager: this.agentManager,
         agentStorage: this.agentStorage,
         logger: this.sessionLogger,
+        purpose: "history",
       });
       const agentPayload = await this.buildAgentPayload(snapshot);
 
