@@ -21,8 +21,8 @@ import {
   resolveComposerAttachmentSubmitFormat,
   splitComposerAttachmentsForSubmit,
 } from "@/composer/attachments/submit";
-import { TitlebarDragRegion } from "@/components/desktop/titlebar-drag-region";
 import { MenuHeader } from "@/components/headers/menu-header";
+import { NewWorkspaceCanvas } from "./new-workspace-canvas";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useToast } from "@/contexts/toast-context";
 import { useAgentInputDraft } from "@/composer/draft/input-draft";
@@ -1656,8 +1656,7 @@ function NewWorkspaceLayout({
       {fullscreen ? null : (
         <MenuHeader borderless rightContent={isCompact ? importSessionButton : undefined} />
       )}
-      <View style={styles.content}>
-        <TitlebarDragRegion />
+      <NewWorkspaceCanvas>
         <ComposerDock centered={!isCompact} fullscreen={fullscreen}>
           {setupFields}
           <>
@@ -1665,7 +1664,7 @@ function NewWorkspaceLayout({
             {isCompact || fullscreen ? null : importSessionButton}
           </>
         </ComposerDock>
-      </View>
+      </NewWorkspaceCanvas>
     </>
   );
 }
@@ -1675,10 +1674,6 @@ const styles = StyleSheet.create((theme) => ({
     flex: 1,
     backgroundColor: theme.colors.surface0,
     userSelect: "none",
-  },
-  content: {
-    position: "relative",
-    flex: 1,
   },
   compactSetupSpace: {
     flex: 1,
