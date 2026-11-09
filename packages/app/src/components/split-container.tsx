@@ -1,6 +1,6 @@
 import {
   AdaptiveWorkspaceChrome,
-  type WorkspaceCompactHeaderActions,
+  type WorkspaceCompactHeaderTabs,
 } from "@/screens/workspace/adaptive-workspace-chrome";
 import { useWorkspaceTabDrag } from "./workspace-tab-drag-context";
 import {
@@ -69,12 +69,13 @@ import { isNative } from "@/constants/platform";
 
 interface SplitContainerProps {
   layout: WorkspaceLayout;
+  /** The full workspace header: title, project row and workspace actions. */
   renderMainHeader?: () => ReactNode;
-  renderCompactHeader: (
-    tabs: WorkspaceTabDescriptor[],
-    activeTabKey: string,
-    actions: WorkspaceCompactHeaderActions,
-  ) => ReactNode;
+  /**
+   * The compact workspace header. With one presented pane it carries that pane's tab switcher in
+   * place of its tab rail; above a split it carries workspace controls only.
+   */
+  renderCompactHeader: (paneTabs: WorkspaceCompactHeaderTabs | null) => ReactNode;
   workspaceKey: string;
   normalizedServerId: string;
   normalizedWorkspaceId: string;
@@ -131,6 +132,11 @@ interface SplitNodeViewProps extends Omit<
   windowChromeCorners: WindowChromeCorners;
   maximizedPaneId: string | null;
   workspaceHasMultiplePanes: boolean;
+  /**
+   * One presented pane draws the workspace header itself and may merge its tabs into the compact
+   * header. Split panes share one header above them and always show their tab rails.
+   */
+  ownsWorkspaceHeader: boolean;
   onTogglePaneMaximized: (paneId: string) => void;
 }
 
@@ -247,11 +253,27 @@ export function SplitContainer({
       : inheritedWindowChromeCorners;
   const mainColumnStyle = styles.mainColumn;
   const renderRoot = useMemo(() => wrapRootPaneForStableMount(splitRoot.root), [splitRoot.root]);
+  const panesShareWorkspaceHeader = hasMultipleVisiblePanes(splitRoot.root);
+  const sharedCompactHeader = useMemo(
+    () =>
+      panesShareWorkspaceHeader ? (
+        <WindowChromeSafeArea placement="inline" dataSet={WINDOW_CHROME_DATASET}>
+          <TitlebarDragRegion />
+          {renderCompactHeader(null)}
+        </WindowChromeSafeArea>
+      ) : null,
+    [panesShareWorkspaceHeader, renderCompactHeader],
+  );
   return (
     <RenderProfile id="SplitContainer">
       <View style={styles.workspaceShell}>
         <WindowChromeRegion corners={mainColumnWindowChromeCorners}>
           <View style={mainColumnStyle}>
+            {panesShareWorkspaceHeader ? (
+              <AdaptiveWorkspaceChrome compactHeader={sharedCompactHeader}>
+                {renderMainHeader?.()}
+              </AdaptiveWorkspaceChrome>
+            ) : null}
             {splitRoot.usesFallbackStrip && <WindowChromeSafeArea placement="below" />}
             {renderRoot ? (
               <SplitNodeView
@@ -287,7 +309,12 @@ export function SplitContainer({
                 showDropZones={activeDragTabId !== null}
                 dropPreview={dropPreview}
                 tabDropPreview={tabDropPreview}
-                windowChromeCorners={splitRoot.usesFallbackStrip ? "none" : windowChromeCorners}
+                windowChromeCorners={
+                  splitRoot.usesFallbackStrip || panesShareWorkspaceHeader
+                    ? "none"
+                    : windowChromeCorners
+                }
+                ownsWorkspaceHeader={!panesShareWorkspaceHeader}
                 maximizedPaneId={maximizedPaneId}
                 workspaceHasMultiplePanes={workspaceHasMultiplePanes}
                 onTogglePaneMaximized={handleTogglePaneMaximized}
@@ -426,6 +453,7 @@ function SplitNodeView({
   onTogglePaneMaximized,
   focusModeEnabled,
   onExitFocusMode,
+  ownsWorkspaceHeader,
   renderMainHeader,
   renderCompactHeader,
 }: SplitNodeViewProps) {
@@ -514,6 +542,7 @@ function SplitNodeView({
             onTogglePaneMaximized={onTogglePaneMaximized}
             focusModeEnabled={focusModeEnabled}
             onExitFocusMode={onExitFocusMode}
+            ownsWorkspaceHeader={ownsWorkspaceHeader}
             renderMainHeader={renderMainHeader}
             renderCompactHeader={renderCompactHeader}
           />
@@ -581,6 +610,7 @@ function SplitNodeView({
               onTogglePaneMaximized={onTogglePaneMaximized}
               focusModeEnabled={focusModeEnabled}
               onExitFocusMode={onExitFocusMode}
+              ownsWorkspaceHeader={ownsWorkspaceHeader}
               renderMainHeader={renderMainHeader}
               renderCompactHeader={renderCompactHeader}
             />
@@ -641,6 +671,7 @@ const SplitPaneView = memo(function SplitPaneView({
   onTogglePaneMaximized,
   focusModeEnabled,
   onExitFocusMode,
+  ownsWorkspaceHeader,
   renderMainHeader,
   renderCompactHeader,
 }: SplitPaneViewProps) {
@@ -773,13 +804,24 @@ const SplitPaneView = memo(function SplitPaneView({
     createNewTab,
   });
   const compactHeader = useMemo(
-    () => (
-      <WindowChromeSafeArea placement="inline" dataSet={WINDOW_CHROME_DATASET}>
-        <TitlebarDragRegion />
-        {renderCompactHeader(paneTabs, activeTabDescriptor?.key ?? "", compactHeaderActions)}
-      </WindowChromeSafeArea>
-    ),
-    [renderCompactHeader, paneTabs, activeTabDescriptor?.key, compactHeaderActions],
+    () =>
+      ownsWorkspaceHeader ? (
+        <WindowChromeSafeArea placement="inline" dataSet={WINDOW_CHROME_DATASET}>
+          <TitlebarDragRegion />
+          {renderCompactHeader({
+            tabs: paneTabs,
+            activeTabKey: activeTabDescriptor?.key ?? "",
+            actions: compactHeaderActions,
+          })}
+        </WindowChromeSafeArea>
+      ) : null,
+    [
+      ownsWorkspaceHeader,
+      renderCompactHeader,
+      paneTabs,
+      activeTabDescriptor?.key,
+      compactHeaderActions,
+    ],
   );
   return (
     <RenderProfile id={`SplitPaneView:${pane.id}`}>
@@ -790,7 +832,7 @@ const SplitPaneView = memo(function SplitPaneView({
         testID={`workspace-pane-${pane.id}`}
       >
         <AdaptiveWorkspaceChrome compactHeader={compactHeader}>
-          {renderMainHeader?.()}
+          {ownsWorkspaceHeader ? renderMainHeader?.() : null}
           <WindowChromeRegion corners={focusModeEnabled ? "both" : "none"}>
             <WindowChromeSafeArea
               placement="inline"
