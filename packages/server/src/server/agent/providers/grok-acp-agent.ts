@@ -330,7 +330,7 @@ export function buildGrokSessionFeatures(config: AgentSessionConfig): AgentFeatu
       description: "Switch Grok into plan mode before making changes.",
       tooltip: "Toggle plan mode",
       icon: "list-todo",
-      value: config.featureValues?.[GROK_PLAN_MODE_FEATURE_ID] === true,
+      value: config.providerOptions?.[GROK_PLAN_MODE_FEATURE_ID] === true,
     },
   ];
 }
@@ -352,7 +352,7 @@ export function resolveGrokCreateConfig(
   return resolveDefaultAgentCreateConfig({
     ...input,
     availableModes,
-    featureValues: withoutGrokAutoAccept(input.featureValues),
+    providerOptions: withoutGrokAutoAccept(input.providerOptions),
   });
 }
 

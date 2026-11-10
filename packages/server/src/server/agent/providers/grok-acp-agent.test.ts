@@ -217,26 +217,27 @@ describe("GrokACPAgentClient", () => {
     });
 
     await expect(
-      client.listFeatures({
+      client.listControls({
         provider: "grok",
         cwd: "/tmp/grok",
       }),
-    ).resolves.toEqual([
-      expect.objectContaining({ type: "toggle", id: "plan_mode", value: false }),
-    ]);
+    ).resolves.toEqual({
+      controls: [expect.objectContaining({ type: "toggle", key: "plan_mode" })],
+      options: {},
+    });
 
     expect(
       resolveGrokCreateConfig({
         provider: "grok",
         requestedMode: undefined,
-        featureValues: { auto_accept: true, plan_mode: false },
+        providerOptions: { auto_accept: true, plan_mode: false },
         parent: null,
         unattended: true,
         availableModes: [],
       }),
     ).toEqual({
       modeId: "always-approve",
-      featureValues: { plan_mode: false },
+      providerOptions: { plan_mode: false },
     });
     expect(
       isGrokCreateConfigUnattended({
@@ -251,7 +252,7 @@ describe("GrokACPAgentClient", () => {
         config: {
           provider: "grok",
           cwd: "/tmp/grok",
-          featureValues: { auto_accept: true },
+          providerOptions: { auto_accept: true },
         },
         availableModes: [],
       }),

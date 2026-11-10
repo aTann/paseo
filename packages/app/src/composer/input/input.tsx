@@ -40,12 +40,12 @@ import {
   type ToolbarGlyph,
   toolbarSlot,
 } from "@/components/ui/control-geometry";
+import { bySizing } from "@/components/ui/control-sizing";
 import {
   COMPOSER_PADDING_BOTTOM,
   COMPOSER_PADDING_HORIZONTAL,
   COMPOSER_CORNER_RADIUS,
   COMPOSER_PADDING_TOP,
-  COMPOSER_TOOLBAR_SHAPES,
   composerToolbarOverhang,
   resolveComposerLeadingEdge,
 } from "@/composer/input/toolbar-rails";
@@ -185,7 +185,7 @@ export interface MessageInputProps {
   leftContent?: React.ReactNode;
   /** Content to render on the right side before the voice button (e.g., context window meter) */
   beforeVoiceContent?: React.ReactNode;
-  /** The realtime voice mode button after the dictation button, or null when the row hides it. */
+  /** The realtime voice mode button, which takes the trailing disc while there is nothing to send. */
   voiceModeContent?: React.ReactNode;
   /** Primary action to render when the agent is active and the composer has no sendable content. */
   activeActionContent?: React.ReactNode;
@@ -898,7 +898,7 @@ function SendButtonTooltip({
   );
 }
 
-type PrimaryActionKind = "send" | "active" | "none";
+type PrimaryActionKind = "send" | "active" | "voiceMode" | "none";
 
 function hasSendableComposerContent(input: {
   hasText: boolean;
@@ -913,22 +913,26 @@ function resolvePrimaryActionKind(input: {
   allowEmptySubmit: boolean;
   isAgentRunning: boolean;
   isSubmitLoading: boolean;
+  offersVoiceMode: boolean;
 }): PrimaryActionKind {
   if (input.hasSendableContent || input.allowEmptySubmit) return "send";
   if (input.isAgentRunning) return "active";
   if (input.isSubmitLoading) return "send";
-  return "none";
+  return input.offersVoiceMode ? "voiceMode" : "none";
 }
 
 function PrimaryAction({
   kind,
   activeActionContent,
+  voiceModeContent,
   ...sendButtonProps
 }: {
   kind: PrimaryActionKind;
   activeActionContent: React.ReactNode;
+  voiceModeContent: React.ReactNode;
 } & React.ComponentProps<typeof SendButtonTooltip>) {
   if (kind === "active") return activeActionContent;
+  if (kind === "voiceMode") return voiceModeContent;
   if (kind === "send") return <SendButtonTooltip {...sendButtonProps} />;
   return null;
 }
@@ -1886,6 +1890,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       allowEmptySubmit,
       isAgentRunning,
       isSubmitLoading,
+      offersVoiceMode: voiceModeContent != null,
     });
     const { canPressLoadingButton, isSendButtonDisabled, defaultActionQueues } =
       computeSendButtonState({
@@ -1978,7 +1983,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     const voiceButtonStyle = useCallback(
       ({ hovered, pressed }: { hovered?: boolean; pressed?: boolean }) => [
         styles.voiceButton,
-        isDictating && styles.voiceButtonRecording,
         Boolean(hovered || pressed) && !isDictating && styles.iconButtonHovered,
         Boolean(pressed) && isDictating && styles.discPressed,
         !isDictationStartEnabled && styles.buttonDisabled,
@@ -2023,7 +2027,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     // Fullscreen always shows Send; without content it is disabled, and looks it.
     // With nothing to send and no voice mode, a disabled Send holds the trailing disc so the row
     // does not shift when typing starts.
-    const sendStandsIn = isFullscreen || (primaryActionKind === "none" && voiceModeContent == null);
+    const sendStandsIn = isFullscreen || primaryActionKind === "none";
     const presentedActionKind: PrimaryActionKind = sendStandsIn ? "send" : primaryActionKind;
     const isPresentedSendDisabled = resolvePresentationSendDisabled({
       standsIn: sendStandsIn,
@@ -2075,6 +2079,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         <PrimaryAction
           kind={presentedActionKind}
           activeActionContent={activeActionContent}
+          voiceModeContent={voiceModeContent}
           shouldShow
           canPressLoadingButton={canPressLoadingButton}
           onSubmitLoadingPress={onSubmitLoadingPress}
@@ -2096,6 +2101,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       [
         presentedActionKind,
         activeActionContent,
+        voiceModeContent,
         canPressLoadingButton,
         onSubmitLoadingPress,
         handleDefaultSendAction,
@@ -2146,7 +2152,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
             fullscreen={isFullscreen}
             compact={isCompact}
             onRenderedLinesChange={setRenderedLines}
-            focusHintVisible={!isFullscreen && isWeb && !isInputFocused && !value}
+            focusHintVisible={!isFullscreen && isWeb && !isInputFocused && !hasLiveText}
             focusInputKeys={focusInputKeys}
             focusHintLabel={t("composer.input.focusHint", {
               shortcut: focusInputKeys ? formatShortcut(focusInputKeys[0], getShortcutOs()) : "",
@@ -2178,6 +2184,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         isFullscreen,
         isCompact,
         isInputFocused,
+        hasLiveText,
         value,
         focusInputKeys,
       ],
@@ -2215,7 +2222,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
             {leftContent}
           </View>
 
-          {/* Right: voice button, contextual button (realtime/send/cancel) */}
+          {/* Right: dictation, then the trailing action (voice mode, send or stop) */}
           <View style={styles.rightButtonGroup}>
             {beforeVoiceContent}
             <VoiceButtonTooltip
@@ -2230,8 +2237,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               voiceMuteToggleKeys={voiceMuteToggleKeys}
               dictationToggleKeys={dictationToggleKeys}
             />
-            {voiceModeContent}
-            {sendButton}
+            <View style={styles.trailingDisc}>{sendButton}</View>
           </View>
         </View>
       ),
@@ -2256,7 +2262,6 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         isRealtimeVoiceForCurrentAgent,
         voiceMuteToggleKeys,
         dictationToggleKeys,
-        voiceModeContent,
         sendButton,
       ],
     );
@@ -2464,8 +2469,16 @@ const styles = StyleSheet.create((theme: Theme) => ({
     alignItems: "center",
     gap: TOOLBAR_CONTROL_GAP,
   },
+  // Touch-sized the row's highlights touch, but the disc is always painted, so a pressed neighbour
+  // keeps clear of it instead of merging with it.
+  trailingDisc: {
+    marginLeft: bySizing({ touch: theme.spacing[1.5], pointer: 0 }),
+  },
+  // Touch-sized the plus is all thin arms, so beside the picker's glyph the same gap reads wider.
+  // Its highlight can overlap the picker's: only one control is ever pressed.
   attachButton: {
-    ...toolbarSlot(COMPOSER_TOOLBAR_SHAPES.attach),
+    ...toolbarSlot(),
+    marginRight: bySizing({ touch: -2, pointer: 0 }),
     borderRadius: theme.borderRadius.full,
     alignItems: "center",
     justifyContent: "center",
@@ -2477,13 +2490,10 @@ const styles = StyleSheet.create((theme: Theme) => ({
     justifyContent: "center",
   },
   voiceButton: {
-    ...toolbarSlot(COMPOSER_TOOLBAR_SHAPES.dictation),
+    ...toolbarSlot(),
     borderRadius: theme.borderRadius.full,
     alignItems: "center",
     justifyContent: "center",
-  },
-  voiceButtonRecording: {
-    marginHorizontal: toolbarSlot(COMPOSER_TOOLBAR_SHAPES.disc).marginHorizontal,
   },
   voiceButtonRecordingDisc: {
     width: TOOLBAR_DISC_SIZE,
@@ -2495,7 +2505,6 @@ const styles = StyleSheet.create((theme: Theme) => ({
   },
   sendButton: {
     minWidth: TOOLBAR_DISC_SIZE,
-    marginHorizontal: toolbarSlot(COMPOSER_TOOLBAR_SHAPES.disc).marginHorizontal,
     height: TOOLBAR_DISC_SIZE,
     alignItems: "center",
     justifyContent: "center",
