@@ -41,6 +41,7 @@ interface ExplorerSidebarDockProps extends Pick<
   normalizedServerId: string;
   normalizedWorkspaceId: string;
   isWorkspaceFocused: boolean;
+  paneFocusSuspended: boolean;
   closingTabIds: Set<string>;
   onSelectTab: (paneId: string, tabId: string) => void;
   onCloseTab: (tabId: string) => Promise<void> | void;
@@ -59,6 +60,7 @@ export function ExplorerSidebarDock({
   normalizedServerId,
   normalizedWorkspaceId,
   isWorkspaceFocused,
+  paneFocusSuspended,
   closingTabIds,
   onSelectTab,
   onCloseTab,
@@ -174,7 +176,7 @@ export function ExplorerSidebarDock({
               normalizedServerId={normalizedServerId}
               normalizedWorkspaceId={normalizedWorkspaceId}
               isWorkspaceFocused={isWorkspaceFocused}
-              isPaneFocused
+              isPaneFocused={!paneFocusSuspended}
               buildPaneContentModel={buildPaneContentModel}
             />
           </View>
