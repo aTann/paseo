@@ -4,6 +4,7 @@ import { getResidentBrowserWebview } from "@/desktop/browser/resident-webviews";
 import { setCommandCenterFocusRestoreElement } from "@/utils/command-center-focus-restore";
 import { buildBrowserKeyboardPolicy, attachElectronBrowserSource } from "./electron-browser";
 import { attachDomKeyboardSource } from "./dom.web";
+import { attachFrameShortcutSource } from "./frame-shortcut";
 import type { KeyboardSourceHandlers } from "./contract";
 export function attachKeyboardSources(handlers: KeyboardSourceHandlers): () => void {
   const detachDom = attachDomKeyboardSource(handlers);
@@ -19,9 +20,11 @@ export function attachKeyboardSources(handlers: KeyboardSourceHandlers): () => v
         handlers,
       )
     : () => {};
+  const detachFrame = subscribeGuest ? attachFrameShortcutSource(subscribeGuest) : () => {};
   return () => {
     detachDom();
     detachGuest();
+    detachFrame();
   };
 }
 export function publishKeyboardPolicy(input: import("./contract").KeyboardPolicyInput): void {

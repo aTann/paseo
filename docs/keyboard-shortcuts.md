@@ -91,3 +91,12 @@ A binding on a key the platform already uses for editing, such as Cmd/Ctrl+Z for
 workspace archive undo, declares `editable: false` and registers its handler with
 `isActive` true only while it has work. An inactive handler leaves the key
 unhandled, so the pipeline skips `preventDefault` and the platform's own undo runs.
+
+## Child frames
+
+The HTML preview is a child frame. Keydown inside it does not reach the host
+page. On Linux and Windows the Window menu's Close item is Ctrl+W, so that key
+closes the window. The desktop process takes Ctrl+W, or Cmd+W on macOS, back
+while a child frame is focused and dispatches it to the host shortcut pipeline,
+which closes the current tab. Browser webviews already keep this key out of the
+menu through the guest shortcut policy.
