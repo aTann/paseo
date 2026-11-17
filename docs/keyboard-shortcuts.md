@@ -108,9 +108,10 @@ unhandled, so the pipeline skips `preventDefault` and the platform's own undo ru
 
 ## Child frames
 
-The HTML preview is a child frame. Keydown inside it does not reach the host
-page. On Linux and Windows the Window menu's Close item is Ctrl+W, so that key
-closes the window. The desktop process takes Ctrl+W, or Cmd+W on macOS, back
-while a child frame is focused and dispatches it to the host shortcut pipeline,
-which closes the current tab. Browser webviews already keep this key out of the
-menu through the guest shortcut policy.
+The HTML preview and a document preview are child frames. Keydown inside them
+does not reach the host page. On Linux and Windows the Window menu's Close item
+is Ctrl+W, so that key closes the window. The desktop process takes Ctrl+W, or
+Cmd+W on macOS, and Escape back while a child frame is focused. Ctrl+W closes
+the current tab. Escape leaves an HTML or Markdown preview for its source, and
+closes an image or document preview. Browser webviews already keep Ctrl+W out of
+the menu through the guest shortcut policy.

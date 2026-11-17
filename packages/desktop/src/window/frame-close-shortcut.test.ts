@@ -123,6 +123,47 @@ describe("installFrameCloseShortcutRedirect", () => {
     expect(contents.sent).toEqual([]);
   });
 
+  it("hands Escape in a child frame to the host so a preview can dismiss", () => {
+    const contents = install("linux");
+
+    contents.press({
+      alt: false,
+      code: "Escape",
+      control: false,
+      isAutoRepeat: false,
+      key: "Escape",
+      meta: false,
+      shift: false,
+      type: "keyDown",
+    });
+    contents.press({
+      alt: false,
+      code: "Escape",
+      control: true,
+      isAutoRepeat: false,
+      key: "Escape",
+      meta: false,
+      shift: false,
+      type: "keyDown",
+    });
+
+    expect(contents.prevented).toEqual([true, false]);
+    expect(contents.sent).toEqual([
+      {
+        channel: FRAME_SHORTCUT_INPUT_CHANNEL,
+        payload: {
+          alt: false,
+          code: "Escape",
+          control: false,
+          key: "Escape",
+          meta: false,
+          repeat: false,
+          shift: false,
+        },
+      },
+    ]);
+  });
+
   it("uses Cmd+W for a child frame on macOS and ignores Ctrl+W", () => {
     const contents = install("darwin");
 

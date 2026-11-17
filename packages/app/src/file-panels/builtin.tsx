@@ -1,9 +1,11 @@
 import { useWorkspace, useFileUrl, type PluginFilePanelProps } from "@getpaseo/plugin/client";
+import { usePaneContext } from "@/panels/pane-context";
 import { useCallback, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { ZoomableImage } from "@/components/zoomable-viewport/image";
 import { useSessionStore } from "@/stores/session-store";
+import { useDismissMediaPreviewOnEscape } from "./dismiss-preview";
 import { FileHtmlPreview } from "./html-preview";
 import { FilePanelLoading } from "./loading";
 import { FileMarkdownPreview } from "./markdown-preview";
@@ -59,6 +61,8 @@ function HtmlPreview({ text }: TextFilePreviewProps) {
 }
 
 function ImagePanel({ file }: PluginFilePanelProps) {
+  const { closeCurrentTab } = usePaneContext();
+  useDismissMediaPreviewOnEscape(true, closeCurrentTab);
   const url = useFileUrl(file);
   if (url.status === "loading") return <FilePanelLoading />;
   if (url.status === "error") return <FilePanelError message={url.error.message} />;

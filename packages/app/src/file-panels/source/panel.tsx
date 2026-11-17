@@ -21,6 +21,7 @@ import { useAppSettings } from "@/hooks/use-settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { formatFileSize } from "@/utils/format-file-size";
 import type { Theme } from "@/styles/theme";
+import { useDismissMediaPreviewOnEscape } from "../dismiss-preview";
 import { FilePanelLoading } from "../loading";
 import type { FileConflictAlertState } from "./conflict-alert";
 import { FileEditorModel, getFileConflictCallout } from "./editor/model";
@@ -118,6 +119,9 @@ function ReadonlyTextFile({
   const text = useFileText(file);
   const { t } = useTranslation();
   const [view, setView] = useTextFileView(params, revision);
+  useDismissMediaPreviewOnEscape(Preview !== undefined && view === "preview", () =>
+    setView("source"),
+  );
   const sourceLocation = useMemo(
     () => ({ path: params.path, lineStart: params.lineStart, lineEnd: params.lineEnd }),
     [params.lineEnd, params.lineStart, params.path],
@@ -167,6 +171,9 @@ function EditableTextFile({
   const { t } = useTranslation();
   const [model] = useState(() => new FileEditorModel({ file }));
   const [view, setView] = useTextFileView(params, revision);
+  useDismissMediaPreviewOnEscape(Preview !== undefined && view === "preview", () =>
+    setView("source"),
+  );
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
   const [vimMode, setVimMode] = useState<string | null>(settings.vimKeybindings ? "NORMAL" : null);
   const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);

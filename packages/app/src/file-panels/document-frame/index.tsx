@@ -1,3 +1,5 @@
+import { useDismissMediaPreviewOnEscape } from "@/file-panels/dismiss-preview";
+import { useOptionalPaneContext } from "@/panels/pane-context";
 import { useCallback, useMemo, useRef } from "react";
 import { Platform, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
@@ -26,6 +28,8 @@ const ANDROID_INLINE_EXTENSIONS = new Set([
 ]);
 
 export function DocumentFrame({ url, testID }: { url: string; testID?: string }) {
+  const pane = useOptionalPaneContext();
+  useDismissMediaPreviewOnEscape(pane !== null, () => pane?.closeCurrentTab());
   const source = useMemo(() => ({ uri: url }), [url]);
   const loaded = useRef<string | null>(null);
   const allowDocument = useCallback(

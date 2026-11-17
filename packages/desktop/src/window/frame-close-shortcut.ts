@@ -56,7 +56,7 @@ export function shouldRedirectFrameCloseShortcut(input: {
 }): boolean {
   if (!input.contentsFocused) return false;
   if (input.focusedFrame === null || input.focusedFrame.parent === null) return false;
-  return isWindowCloseShortcut(input.key, input.platform);
+  return isWindowCloseShortcut(input.key, input.platform) || isPreviewDismissKey(input.key);
 }
 
 function isWindowCloseShortcut(key: FrameCloseKey, platform: string): boolean {
@@ -65,9 +65,20 @@ function isWindowCloseShortcut(key: FrameCloseKey, platform: string): boolean {
   return key.control && !key.meta;
 }
 
-// The Window menu's Close item owns Ctrl+W (Cmd+W on macOS). A focused child
-// frame, such as the HTML preview, never delivers that key to the host page, so
-// the menu closes the window. Take it back and let the host close the tab.
+function isPreviewDismissKey(key: FrameCloseKey): boolean {
+  return (
+    key.type === "keyDown" &&
+    key.code === "Escape" &&
+    !key.alt &&
+    !key.control &&
+    !key.meta &&
+    !key.shift
+  );
+}
+
+// A focused child frame, such as an HTML or document preview, never delivers
+// keys to the host page. Ctrl+W would close the window through the Window menu,
+// and Escape would never dismiss the preview. Take both back.
 export function installFrameCloseShortcutRedirect(
   contents: FrameCloseShortcutContents,
   platform: string = process.platform,

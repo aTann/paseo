@@ -1,3 +1,5 @@
+import { useDismissMediaPreviewOnEscape } from "@/file-panels/dismiss-preview";
+import { useOptionalPaneContext } from "@/panels/pane-context";
 import { useEffect, useState } from "react";
 import { documentFrameSandbox } from "./sandbox";
 
@@ -9,6 +11,8 @@ interface ResolvedDocument {
 }
 
 export function DocumentFrame({ url, testID }: { url: string; testID?: string }) {
+  const pane = useOptionalPaneContext();
+  useDismissMediaPreviewOnEscape(pane !== null, () => pane?.closeCurrentTab());
   const [document, setDocument] = useState<ResolvedDocument | null>(null);
 
   useEffect(() => {

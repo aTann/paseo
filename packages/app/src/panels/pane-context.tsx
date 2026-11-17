@@ -74,6 +74,10 @@ export function usePaneContext(): PaneContextValue {
   return value;
 }
 
+export function useOptionalPaneContext(): PaneContextValue | null {
+  return useContext(PaneContext);
+}
+
 /** The host of the pane around this component, or null on a screen with no panes. */
 export function usePaneHost(): PaneHost | null {
   return useContext(PaneContext)?.host ?? null;
@@ -83,4 +87,8 @@ export function usePaneFocus(): PaneFocusContextValue {
   const value = useContext(PaneFocusContext);
   invariant(value, "PaneFocusContext is required");
   return value;
+}
+
+export function useOptionalPaneFocus(): PaneFocusContextValue | null {
+  return useContext(PaneFocusContext);
 }
